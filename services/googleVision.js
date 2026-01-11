@@ -1,10 +1,13 @@
 const vision = require('@google-cloud/vision');
-const path = require('path');
+
+// Railway'de environment variable'dan credentials oku
+const credentials = process.env.GOOGLE_CREDENTIALS_JSON 
+  ? JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON)
+  : require('../config/google-vision-key.json'); // Local fallback
 
 const client = new vision.ImageAnnotatorClient({
-  keyFilename: path.join(__dirname, '../config/google-vision-key.json')
+  credentials: credentials
 });
-
 async function detectText(imagePath) {
   try {
     const [result] = await client.textDetection(imagePath);
