@@ -62,23 +62,80 @@ router.use((error, req, res, next) => {
 router.post('/upload', authenticateToken, upload.single('receipt'), async (req, res) => {
   console.log('📥 Upload isteği geldi');
   console.log('👤 User ID:', req.userId);
+  
   try {
     if (!req.file) {
       return res.status(400).json({ message: 'Dosya yüklenmedi' });
     }
-console.log('📁 Dosya:', req.file.filename);  
+
+    console.log('📁 Dosya:', req.file.filename);  
     const imagePath = req.file.path;
     
-    // OCR işlemi
+    // 1. OCR işlemi
     const result = await detectText(imagePath);
     
     if (!result.success) {
+      // Hata varsa dosyayı sil
+      try {
+        fs.unlinkSync(imagePath);
+      } catch (e) {
+        console.error('Dosya silinemedi:', e);
+      }
       return res.status(400).json({ 
         message: result.message,
         error: result.error 
       });
     }
 
+    // 2. Parse et
+    const parsedData = parseReceipt(result.fullText);
+    console.log('🔍 Parse edildi:', parsedData);  
+    
+    // 3. Veritabanına kaydet
+    try {
+      console.log('🔍 Veritabanına kaydediliyor...'); 
+      const savedReceipt = await saveReceipt(req.userId, {
+        ...parsedData,
+        imagePath: null
+      });
+      console.log('✅ Fiş veritabanına kaydedildi:', savedReceipt.id);
+    } catch (dbError) {
+      console.error('⚠️ Veritabanı kayıt hatası:', dbError);
+    }
+
+    // 4. Dosyayı sil
+    try {
+      fs.unlinkSync(imagePath);
+      console.log('🗑️ Fotoğraf silindi:', imagePath);
+    } catch (unlinkError) {
+      console.error('⚠️ Dosya silinemedi:', unlinkError);
+    }
+
+    // 5. Response gönder
+    res.json({
+      success: true,
+      message: 'OCR başarılı',
+      fullText: result.fullText,
+      parsedData: parsedData,
+      fileName: req.file.filename
+    });
+
+  } catch (error) {
+    console.error('Upload hatası:', error);
+    
+    // Hata durumunda da dosyayı sil
+    if (req.file && req.file.path) {
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (e) {}
+    }
+    
+    res.status(500).json({ 
+      message: 'Sunucu hatası',
+      error: error.message 
+    });
+  }
+});
     // Parse et
     const parsedData = parseReceipt(result.fullText);
     console.log('🔍 Parse edildi:', parsedData);  
