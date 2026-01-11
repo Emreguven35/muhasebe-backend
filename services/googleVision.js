@@ -3,7 +3,11 @@ const vision = require('@google-cloud/vision');
 // Railway'de environment variable'dan credentials oku
 const credentials = process.env.GOOGLE_CREDENTIALS_JSON 
   ? JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON)
-  : require('../config/google-vision-key.json'); // Local fallback
+  : null; // Local'de çalışmayacak ama Railway'de çalışır
+
+if (!credentials) {
+  console.error('❌ Google credentials bulunamadı! GOOGLE_CREDENTIALS_JSON environment variable gerekli.');
+}
 
 const client = new vision.ImageAnnotatorClient({
   credentials: credentials
