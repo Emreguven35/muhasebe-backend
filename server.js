@@ -1,11 +1,17 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
+const fs = require('fs');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { pool } = require('./services/database');
 
 dotenv.config();
+if (!fs.existsSync('uploads')) {
+  fs.mkdirSync('uploads');
+  console.log('📁 uploads klasörü oluşturuldu');
+}
+
 
 const app = express();
 
