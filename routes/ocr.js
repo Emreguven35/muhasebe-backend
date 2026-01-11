@@ -92,16 +92,12 @@ router.post('/upload', authenticateToken, upload.single('receipt'), async (req, 
     console.log('🔍 Parse edildi:', parsedData);  
     
     // 3. Veritabanına kaydet
-    try {
-      console.log('🔍 Veritabanına kaydediliyor...'); 
-      const savedReceipt = await saveReceipt(req.userId, {
-        ...parsedData,
-        imagePath: null
-      });
-      console.log('✅ Fiş veritabanına kaydedildi:', savedReceipt.id);
-    } catch (dbError) {
-      console.error('⚠️ Veritabanı kayıt hatası:', dbError);
-    }
+    console.log('🔍 Veritabanına kaydediliyor...'); 
+    const savedReceipt = await saveReceipt(req.userId, {
+      ...parsedData,
+      imagePath: null
+    });
+    console.log('✅ Fiş veritabanına kaydedildi:', savedReceipt.id);
 
     // 4. Dosyayı sil
     try {
@@ -127,7 +123,9 @@ router.post('/upload', authenticateToken, upload.single('receipt'), async (req, 
     if (req.file && req.file.path) {
       try {
         fs.unlinkSync(req.file.path);
-      } catch (e) {}
+      } catch (e) {
+        console.error('Temizleme hatası:', e);
+      }
     }
     
     res.status(500).json({ 
@@ -136,39 +134,6 @@ router.post('/upload', authenticateToken, upload.single('receipt'), async (req, 
     });
   }
 });
-    // Parse et
-    const parsedData = parseReceipt(result.fullText);
-    console.log('🔍 Parse edildi:', parsedData);  
-     // Veritabanına kaydet
-    try {
-        console.log('🔍 Veritabanına kaydediliyor...'); 
-      const savedReceipt = await saveReceipt(req.userId, {
-        ...parsedData,
-        imagePath: null
-      });
-      console.log('✅ Fiş veritabanına kaydedildi:', savedReceipt.id);
-      fs.unlinkSync(imagePath);
-
-    } catch (dbError) {
-      console.error('⚠️ Veritabanı kayıt hatası:',  dbError);
-    }
-
-    res.json({
-      success: true,
-      message: 'OCR başarılı',
-      fullText: result.fullText,
-      parsedData: parsedData,
-      fileName: req.file.filename
-    });
-
-  } catch (error) {
-    console.error('Upload hatası:', error);
-    res.status(500).json({ 
-      message: 'Sunucu hatası',
-      error: error.message 
-    });
-  }
-  });
 // Excel export endpoint'i
 
 
