@@ -1,0 +1,4 @@
+config/google-vision-key.json
+node_modules/
+.env
+uploads/
