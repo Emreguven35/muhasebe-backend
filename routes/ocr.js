@@ -8,6 +8,7 @@ const { parseReceipt } = require('../services/receiptParser');
 const { createExcel } = require('../services/excelExport');
 const { saveReceipt, getUserReceipts } = require('../services/database');
 const { pool } = require('../services/database');  
+const fs = require('fs');
 const authenticateToken = (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
   
@@ -86,11 +87,13 @@ console.log('📁 Dosya:', req.file.filename);
         console.log('🔍 Veritabanına kaydediliyor...'); 
       const savedReceipt = await saveReceipt(req.userId, {
         ...parsedData,
-        imagePath: imagePath
+        imagePath: null
       });
       console.log('✅ Fiş veritabanına kaydedildi:', savedReceipt.id);
+      fs.unlinkSync(imagePath);
+
     } catch (dbError) {
-      console.error('⚠️ Veritabanı kayıt hatası:', dbError);
+      console.error('⚠️ Veritabanı kayıt hatası:',  dbError);
     }
 
     res.json({
