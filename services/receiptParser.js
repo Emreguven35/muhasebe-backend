@@ -196,7 +196,7 @@ function extractBestDate(lines) {
   }
   
   return null;
-}
+
 
 // ==========================================
 // ANA PARSE FONKSİYONU
