@@ -80,13 +80,13 @@ function isValidDate(day, month, year) {
 // Gelişmiş tarih çıkarma
 function extractBestDate(lines) {
   const datePatterns = [
-    // GG.AA.YYYY veya GG/AA/YYYY (En yaygın)
-    /\b(\d{1,2})[\.\/\-\s](\d{1,2})[\.\/\-\s](20\d{2})\b/,
-    // GG.AA.YY (İki haneli yıl)
-    /\b(\d{1,2})[\.\/\-\s](\d{1,2})[\.\/\-\s](\d{2})\b/,
-    // YYYY-MM-DD (ISO format)
-    /\b(20\d{2})[\.\/\-\s](\d{1,2})[\.\/\-\s](\d{1,2})\b/
-  ];
+  // GG-AA-YYYY veya GG.AA.YYYY veya GG/AA/YYYY (4 haneli yıl - EN ÖNCELİKLİ)
+  /(\d{1,2})[\.\-\/](\d{1,2})[\.\-\/](20\d{2})/,
+  // GG-AA-YY (İki haneli yıl)
+  /(\d{1,2})[\.\-\/](\d{1,2})[\.\-\/](\d{2})/,
+  // YYYY-MM-DD (ISO format)
+  /(20\d{2})[\.\-\/](\d{1,2})[\.\-\/](\d{1,2})/
+];
   
   // Öncelik: Alt kısım (%70-100), sonra üst kısım (%0-30)
   const totalLines = lines.length;
