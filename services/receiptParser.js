@@ -229,10 +229,64 @@ function parseReceipt(text) {
     }
     
     // KDV bulunamadıysa %20 oranından hesapla
-    if (!kdvFound) {
-      const kdv20 = total - (total / 1.20);
-      data.kdv20 = kdv20.toFixed(2);
+    // KDV bulunamadıysa akıllı tahmin
+if (!kdvFound) {
+  // Metinde KDV oranı geçiyor mu? (%1, %10, %20)
+  let kdvRate = 20; // Default
+  
+  if (/%10|YÜZDE\s*10|KDV\s*10/i.test(fullContent)) {
+    kdvRate = 10;
+  } else if (/%1[^0]|YÜZDE\s*1[^0]|KDV\s*1[^0]/i.test(fullContent)) {
+    kdvRate = 1;
+  } else if (/%20|YÜZDE\s*20|KDV\s*20/i.test(fullContent)) {
+    kdvRate = 20;
+  } else {
+    // Oran belirtilmemişse toplam tutardan tahmin et
+    // Türkiye'de yaygın KDV oranları: %1, %10, %20
+    // En küçük farkı veren oranı seç
+    const estimations = [
+      { rate: 1, kdv: total - (total / 1.01) },
+      { rate: 10, kdv: total - (total / 1.10) },
+      { rate: 20, kdv: total - (total / 1.20) }
+    ];
+    
+    // KDV tutarları metinde aranabilir - en yakın olanı bul
+    let bestMatch = estimations[2]; // Default %20
+    let minDiff = Infinity;
+    
+    for (const est of estimations) {
+      // Metinde bu KDV tutarına yakın bir sayı var mı?
+      for (const line of lines) {
+        const amounts = line.match(/(\d+[,\.]\d{2})/g);
+        if (amounts) {
+          amounts.forEach(amt => {
+            const amount = parseFloat(amt.replace(',', '.'));
+            const diff = Math.abs(amount - est.kdv);
+            if (diff < minDiff && diff < est.kdv * 0.1) { // %10 tolerans
+              minDiff = diff;
+              bestMatch = est;
+            }
+          });
+        }
+      }
     }
+    
+    kdvRate = bestMatch.rate;
+  }
+  
+  // KDV'yi doğru alana yaz
+  const kdvAmount = total - (total / (1 + kdvRate / 100));
+  
+  if (kdvRate === 1) {
+    data.kdv1 = kdvAmount.toFixed(2);
+  } else if (kdvRate === 10) {
+    data.kdv10 = kdvAmount.toFixed(2);
+  } else {
+    data.kdv20 = kdvAmount.toFixed(2);
+  }
+  
+  console.log(`📊 Tespit edilen KDV oranı: %${kdvRate}`);
+}
   }
 
   // 6. GİDER CİNSİ BELİRLE
