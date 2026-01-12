@@ -1,3 +1,7 @@
+// ==========================================
+// YARDIMCI FONKSİYONLAR
+// ==========================================
+
 // Karakter normalizasyonu - OCR hatalarını düzelt
 function normalizeForDigits(text) {
   return text
@@ -44,6 +48,96 @@ function fuzzyMatch(text, target, threshold = 2) {
   return false;
 }
 
+// Tarih temizleme ve normalizasyon
+function cleanDateLine(text) {
+  return text
+    .replace(/[SŞ]/g, '5')
+    .replace(/[OQo]/g, '0') // O, Q harflerini sıfıra çevir
+    .replace(/[B]/g, '8')
+    .replace(/[I|i|l]/g, '1') // I, i, l harflerini bir'e çevir
+    .replace(/\s+/g, ''); // Boşlukları kaldır
+}
+
+// Tarih doğrulama
+function isValidDate(day, month, year) {
+  let fullYear = year.length === 2 ? '20' + year : year;
+  const d = parseInt(day);
+  const m = parseInt(month);
+  const y = parseInt(fullYear);
+  
+  // Mantıklı tarih kontrolü
+  if (m < 1 || m > 12) return false;
+  if (d < 1 || d > 31) return false;
+  if (y < 2020 || y > 2026) return false;
+  
+  // Ay'a göre gün kontrolü
+  const daysInMonth = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (d > daysInMonth[m - 1]) return false;
+  
+  return true;
+}
+
+// Gelişmiş tarih çıkarma
+function extractBestDate(lines) {
+  const datePatterns = [
+    // GG.AA.YYYY veya GG/AA/YYYY (En yaygın)
+    /\b(\d{1,2})[\.\/\-\s](\d{1,2})[\.\/\-\s](20\d{2})\b/,
+    // GG.AA.YY (İki haneli yıl)
+    /\b(\d{1,2})[\.\/\-\s](\d{1,2})[\.\/\-\s](\d{2})\b/,
+    // YYYY-MM-DD (ISO format)
+    /\b(20\d{2})[\.\/\-\s](\d{1,2})[\.\/\-\s](\d{1,2})\b/
+  ];
+  
+  // Öncelik: Alt kısım (%70-100), sonra üst kısım (%0-30)
+  const totalLines = lines.length;
+  const bottomThird = lines.slice(Math.floor(totalLines * 0.7));
+  const topThird = lines.slice(0, Math.floor(totalLines * 0.3));
+  const searchOrder = [...bottomThird, ...topThird];
+  
+  for (let line of searchOrder) {
+    // Ürün/fiyat satırlarını atla
+    if (/^\d+\s*X\s*\d+|ADET|KG|LT|GRAM/i.test(line)) continue;
+    
+    let cleanLine = cleanDateLine(line);
+    
+    for (let pattern of datePatterns) {
+      const match = cleanLine.match(pattern);
+      if (match) {
+        let day, month, year;
+        
+        // ISO format (YYYY-MM-DD) kontrolü
+        if (match[0].startsWith('20')) {
+          year = match[1];
+          month = match[2];
+          day = match[3];
+        } else {
+          day = match[1];
+          month = match[2];
+          year = match[3];
+        }
+        
+        if (isValidDate(day, month, year)) {
+          // Yıl formatını düzenle
+          if (year.length === 2) year = '20' + year;
+          
+          return {
+            formatted: `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${year}`,
+            day: parseInt(day),
+            month: parseInt(month),
+            year: parseInt(year)
+          };
+        }
+      }
+    }
+  }
+  
+  return null;
+}
+
+// ==========================================
+// ANA PARSE FONKSİYONU
+// ==========================================
+
 function parseReceipt(text) {
   const data = {
     firmaUnvani: '',
@@ -69,32 +163,28 @@ function parseReceipt(text) {
     }
   }
 
-  // 2. TARİH (GG/AA/YYYY, GG.AA.YYYY, GG-AA-YYYY)
-  const datePattern = /(\d{1,2})[\/\.\-](\d{1,2})[\/\.\-](\d{4}|\d{2})/;
+  // 2. TARİH (GELİŞMİŞ ALGORİTMA)
+  const dateResult = extractBestDate(lines);
   let dateLineIndex = -1;
-  
-  for (let i = 0; i < lines.length; i++) {
-    const match = lines[i].match(datePattern);
-    if (match) {
-      const day = match[1].padStart(2, '0');
-      const month = match[2].padStart(2, '0');
-      let year = match[3];
-      if (year.length === 2) year = '20' + year;
-      data.tarih = `${day}/${month}/${year}`;
-      dateLineIndex = i;
-      break;
+
+  if (dateResult) {
+    data.tarih = dateResult.formatted;
+    
+    // Tarih satırının index'ini bul (fiş no için kullanılacak)
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].includes(dateResult.day.toString()) && 
+          lines[i].includes(dateResult.month.toString())) {
+        dateLineIndex = i;
+        break;
+      }
     }
+    
+    console.log('📅 Tespit edilen tarih:', data.tarih);
   }
 
   // 3. FİŞ NO (GELİŞMİŞ ALGORİTMA)
   
   // 3a. Fuzzy matching ile anahtar kelime ara
-  const fisKeywords = [
-    'FIS NO', 'FİS NO', 'FİŞ NO', 'FIS NUMARASI', 'FİŞ NUMARASI',
-    'BELGE NO', 'MAKBUZ NO', 'Z NO', 'Z RAPOR', 'SIRA NO'
-  ];
-  
-  // Tam metin üzerinde fuzzy arama
   const fisPatterns = [
     /(?:F[IİÎ][SŞ]\s*NO?|F[IİÎ][SŞ]\s*NUMARAS[IİÎ])[:\s#\-]*([0-9\/\-]{3,10})/i,
     /(?:BELGE\s*NO?|MAKBUZ\s*NO?)[:\s#\-]*([0-9\/\-]{3,10})/i,
@@ -228,65 +318,64 @@ function parseReceipt(text) {
       }
     }
     
-    // KDV bulunamadıysa %20 oranından hesapla
     // KDV bulunamadıysa akıllı tahmin
-if (!kdvFound) {
-  // Metinde KDV oranı geçiyor mu? (%1, %10, %20)
-  let kdvRate = 20; // Default
-  
-  if (/%10|YÜZDE\s*10|KDV\s*10/i.test(fullContent)) {
-    kdvRate = 10;
-  } else if (/%1[^0]|YÜZDE\s*1[^0]|KDV\s*1[^0]/i.test(fullContent)) {
-    kdvRate = 1;
-  } else if (/%20|YÜZDE\s*20|KDV\s*20/i.test(fullContent)) {
-    kdvRate = 20;
-  } else {
-    // Oran belirtilmemişse toplam tutardan tahmin et
-    // Türkiye'de yaygın KDV oranları: %1, %10, %20
-    // En küçük farkı veren oranı seç
-    const estimations = [
-      { rate: 1, kdv: total - (total / 1.01) },
-      { rate: 10, kdv: total - (total / 1.10) },
-      { rate: 20, kdv: total - (total / 1.20) }
-    ];
-    
-    // KDV tutarları metinde aranabilir - en yakın olanı bul
-    let bestMatch = estimations[2]; // Default %20
-    let minDiff = Infinity;
-    
-    for (const est of estimations) {
-      // Metinde bu KDV tutarına yakın bir sayı var mı?
-      for (const line of lines) {
-        const amounts = line.match(/(\d+[,\.]\d{2})/g);
-        if (amounts) {
-          amounts.forEach(amt => {
-            const amount = parseFloat(amt.replace(',', '.'));
-            const diff = Math.abs(amount - est.kdv);
-            if (diff < minDiff && diff < est.kdv * 0.1) { // %10 tolerans
-              minDiff = diff;
-              bestMatch = est;
+    if (!kdvFound) {
+      // Metinde KDV oranı geçiyor mu? (%1, %10, %20)
+      let kdvRate = 20; // Default
+      
+      if (/%10|YÜZDE\s*10|KDV\s*10/i.test(fullContent)) {
+        kdvRate = 10;
+      } else if (/%1[^0]|YÜZDE\s*1[^0]|KDV\s*1[^0]/i.test(fullContent)) {
+        kdvRate = 1;
+      } else if (/%20|YÜZDE\s*20|KDV\s*20/i.test(fullContent)) {
+        kdvRate = 20;
+      } else {
+        // Oran belirtilmemişse toplam tutardan tahmin et
+        // Türkiye'de yaygın KDV oranları: %1, %10, %20
+        // En küçük farkı veren oranı seç
+        const estimations = [
+          { rate: 1, kdv: total - (total / 1.01) },
+          { rate: 10, kdv: total - (total / 1.10) },
+          { rate: 20, kdv: total - (total / 1.20) }
+        ];
+        
+        // KDV tutarları metinde aranabilir - en yakın olanı bul
+        let bestMatch = estimations[2]; // Default %20
+        let minDiff = Infinity;
+        
+        for (const est of estimations) {
+          // Metinde bu KDV tutarına yakın bir sayı var mı?
+          for (const line of lines) {
+            const amounts = line.match(/(\d+[,\.]\d{2})/g);
+            if (amounts) {
+              amounts.forEach(amt => {
+                const amount = parseFloat(amt.replace(',', '.'));
+                const diff = Math.abs(amount - est.kdv);
+                if (diff < minDiff && diff < est.kdv * 0.1) { // %10 tolerans
+                  minDiff = diff;
+                  bestMatch = est;
+                }
+              });
             }
-          });
+          }
         }
+        
+        kdvRate = bestMatch.rate;
       }
+      
+      // KDV'yi doğru alana yaz
+      const kdvAmount = total - (total / (1 + kdvRate / 100));
+      
+      if (kdvRate === 1) {
+        data.kdv1 = kdvAmount.toFixed(2);
+      } else if (kdvRate === 10) {
+        data.kdv10 = kdvAmount.toFixed(2);
+      } else {
+        data.kdv20 = kdvAmount.toFixed(2);
+      }
+      
+      console.log(`📊 Tespit edilen KDV oranı: %${kdvRate}`);
     }
-    
-    kdvRate = bestMatch.rate;
-  }
-  
-  // KDV'yi doğru alana yaz
-  const kdvAmount = total - (total / (1 + kdvRate / 100));
-  
-  if (kdvRate === 1) {
-    data.kdv1 = kdvAmount.toFixed(2);
-  } else if (kdvRate === 10) {
-    data.kdv10 = kdvAmount.toFixed(2);
-  } else {
-    data.kdv20 = kdvAmount.toFixed(2);
-  }
-  
-  console.log(`📊 Tespit edilen KDV oranı: %${kdvRate}`);
-}
   }
 
   // 6. GİDER CİNSİ BELİRLE
