@@ -14,7 +14,7 @@ const client = new vision.ImageAnnotatorClient({
 });
 async function detectText(imagePath) {
   try {
-    const [result] = await client.textDetection(imagePath);
+    const [result] = await client.documentTextDetection(imagePath);
     const detections = result.textAnnotations;
 
     if (!detections || detections.length === 0) {
