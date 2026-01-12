@@ -80,13 +80,74 @@ function isValidDate(day, month, year) {
 // Gelişmiş tarih çıkarma
 function extractBestDate(lines) {
   const datePatterns = [
-  // GG-AA-YYYY veya GG.AA.YYYY veya GG/AA/YYYY (4 haneli yıl - EN ÖNCELİKLİ)
-  /(\d{1,2})[\.\-\/](\d{1,2})[\.\-\/](20\d{2})/,
-  // GG-AA-YY (İki haneli yıl)
-  /(\d{1,2})[\.\-\/](\d{1,2})[\.\-\/](\d{2})/,
-  // YYYY-MM-DD (ISO format)
-  /(20\d{2})[\.\-\/](\d{1,2})[\.\-\/](\d{1,2})/
-];
+    // Önce SADECE tarih olan satırları ara (başında/sonunda başka şey yok)
+    /^(\d{1,2})[\.\-\/](\d{1,2})[\.\-\/](20\d{2})$/,
+    /^(\d{1,2})[\.\-\/](\d{1,2})[\.\-\/](\d{2})$/,
+    // Sonra tarih + saat kombinasyonu
+    /(\d{1,2})[\.\-\/](\d{1,2})[\.\-\/](20\d{2})\s+\d{1,2}:\d{2}/,
+    /(\d{1,2})[\.\-\/](\d{1,2})[\.\-\/](\d{2})\s+\d{1,2}:\d{2}/
+  ];
+  
+  // Öncelik: Alt kısım (%70-100), sonra üst kısım (%0-30)
+  const totalLines = lines.length;
+  const bottomThird = lines.slice(Math.floor(totalLines * 0.7));
+  const topThird = lines.slice(0, Math.floor(totalLines * 0.3));
+  const searchOrder = [...bottomThird, ...topThird];
+  
+  for (let line of searchOrder) {
+    // Ürün/fiyat satırlarını atla
+    if (/^\d+\s*X\s*\d+|ADET|KG|LT|GRAM/i.test(line)) continue;
+    
+    // EPDK, NO: içerenleri atla
+    if (/EPDK|ADRES|MAH\.|SOK\.|CAD\.|VKN|MERSİS/i.test(line)) continue;
+    
+    // Boşlukları KALDIRMA - orijinal satırda ara
+    let testLine = line.trim();
+    
+    console.log('🔍 Test edilen satır:', testLine); // DEBUG
+    
+    for (let pattern of datePatterns) {
+      const match = testLine.match(pattern);
+      if (match) {
+        console.log('🔍 Tarih match bulundu:', match);
+        
+        let day, month, year;
+        
+        // ISO format (YYYY-MM-DD) kontrolü
+        if (match[0].startsWith('20')) {
+          year = match[1];
+          month = match[2];
+          day = match[3];
+        } else {
+          day = match[1];
+          month = match[2];
+          year = match[3];
+        }
+        
+        console.log('🔍 Parse edilen:', { day, month, year });
+        
+        if (isValidDate(day, month, year)) {
+          console.log('✅ Geçerli tarih bulundu!');
+          
+          // Yıl formatını düzenle
+          if (year.length === 2) year = '20' + year;
+          
+          return {
+            formatted: `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${year}`,
+            day: parseInt(day),
+            month: parseInt(month),
+            year: parseInt(year)
+          };
+        } else {
+          console.log('❌ Tarih geçersiz, devam ediliyor...');
+        }
+      }
+    }
+  }
+  
+  console.log('❌ Hiçbir geçerli tarih bulunamadı');
+  return null;
+}
   
   // Öncelik: Alt kısım (%70-100), sonra üst kısım (%0-30)
   const totalLines = lines.length;
