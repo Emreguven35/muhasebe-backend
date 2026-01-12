@@ -48,16 +48,6 @@ function fuzzyMatch(text, target, threshold = 2) {
   return false;
 }
 
-// Tarih temizleme ve normalizasyon
-function cleanDateLine(text) {
-  return text
-    .replace(/[SŞ]/g, '5')
-    .replace(/[OQo]/g, '0') // O, Q harflerini sıfıra çevir
-    .replace(/[B]/g, '8')
-    .replace(/[I|i|l]/g, '1') // I, i, l harflerini bir'e çevir
-    .replace(/\s+/g, ''); // Boşlukları kaldır
-}
-
 // Tarih doğrulama
 function isValidDate(day, month, year) {
   let fullYear = year.length === 2 ? '20' + year : year;
@@ -125,6 +115,7 @@ function extractBestDate(lines) {
         }
         
         console.log('🔍 Parse edilen:', { day, month, year });
+        console.log('🔍 Validation:', isValidDate(day, month, year));
         
         if (isValidDate(day, month, year)) {
           console.log('✅ Geçerli tarih bulundu!');
@@ -148,55 +139,6 @@ function extractBestDate(lines) {
   console.log('❌ Hiçbir geçerli tarih bulunamadı');
   return null;
 }
-  
-  // Öncelik: Alt kısım (%70-100), sonra üst kısım (%0-30)
-  const totalLines = lines.length;
-  const bottomThird = lines.slice(Math.floor(totalLines * 0.7));
-  const topThird = lines.slice(0, Math.floor(totalLines * 0.3));
-  const searchOrder = [...bottomThird, ...topThird];
-  
-  for (let line of searchOrder) {
-    // Ürün/fiyat satırlarını atla
-    if (/^\d+\s*X\s*\d+|ADET|KG|LT|GRAM/i.test(line)) continue;
-    
-    let cleanLine = cleanDateLine(line);
-    
-    for (let pattern of datePatterns) {
-      const match = cleanLine.match(pattern);
-      if (match) {
-        console.log('🔍 Tarih match bulundu:', match);
-        let day, month, year;
-        
-        // ISO format (YYYY-MM-DD) kontrolü
-        if (match[0].startsWith('20')) {
-          year = match[1];
-          month = match[2];
-          day = match[3];
-        } else {
-          day = match[1];
-          month = match[2];
-          year = match[3];
-        }
-         console.log('🔍 Parse edilen:', { day, month, year });
-         console.log('🔍 Validation:', isValidDate(day, month, year));
-        
-        if (isValidDate(day, month, year)) {
-          // Yıl formatını düzenle
-          if (year.length === 2) year = '20' + year;
-          
-          return {
-            formatted: `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${year}`,
-            day: parseInt(day),
-            month: parseInt(month),
-            year: parseInt(year)
-          };
-        }
-      }
-    }
-  }
-  
-  return null;
-
 
 // ==========================================
 // ANA PARSE FONKSİYONU
