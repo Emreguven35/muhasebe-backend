@@ -70,31 +70,23 @@ function isValidDate(day, month, year) {
 // Gelişmiş tarih çıkarma
 function extractBestDate(lines) {
   const datePatterns = [
-    // Önce SADECE tarih olan satırları ara (başında/sonunda başka şey yok)
     /^(\d{1,2})[\.\-\/](\d{1,2})[\.\-\/](20\d{2})$/,
     /^(\d{1,2})[\.\-\/](\d{1,2})[\.\-\/](\d{2})$/,
-    // Sonra tarih + saat kombinasyonu
     /(\d{1,2})[\.\-\/](\d{1,2})[\.\-\/](20\d{2})\s+\d{1,2}:\d{2}/,
     /(\d{1,2})[\.\-\/](\d{1,2})[\.\-\/](\d{2})\s+\d{1,2}:\d{2}/
   ];
   
-  // Öncelik: Alt kısım (%70-100), sonra üst kısım (%0-30)
-  const totalLines = lines.length;
-  const bottomThird = lines.slice(Math.floor(totalLines * 0.7));
-  const topThird = lines.slice(0, Math.floor(totalLines * 0.3));
-  const searchOrder = [...bottomThird, ...topThird];
-  
-  for (let line of searchOrder) {
+  // TÜM SATIRLARI TEST ET (öncelik sırasız)
+  for (let line of lines) {
     // Ürün/fiyat satırlarını atla
     if (/^\d+\s*X\s*\d+|ADET|KG|LT|GRAM/i.test(line)) continue;
     
-    // EPDK, NO: içerenleri atla
-    if (/EPDK|ADRES|MAH\.|SOK\.|CAD\.|VKN|MERSİS/i.test(line)) continue;
+    // EPDK, NO: içerenleri atla (ama tarih varsa devam et)
+    if (/EPDK\s*NO:|VKN|MERSİS\s*NO:/i.test(line)) continue;
     
-    // Boşlukları KALDIRMA - orijinal satırda ara
     let testLine = line.trim();
     
-    console.log('🔍 Test edilen satır:', testLine); // DEBUG
+    console.log('🔍 Test edilen satır:', testLine);
     
     for (let pattern of datePatterns) {
       const match = testLine.match(pattern);
@@ -103,7 +95,6 @@ function extractBestDate(lines) {
         
         let day, month, year;
         
-        // ISO format (YYYY-MM-DD) kontrolü
         if (match[0].startsWith('20')) {
           year = match[1];
           month = match[2];
@@ -120,7 +111,6 @@ function extractBestDate(lines) {
         if (isValidDate(day, month, year)) {
           console.log('✅ Geçerli tarih bulundu!');
           
-          // Yıl formatını düzenle
           if (year.length === 2) year = '20' + year;
           
           return {
@@ -139,7 +129,6 @@ function extractBestDate(lines) {
   console.log('❌ Hiçbir geçerli tarih bulunamadı');
   return null;
 }
-
 // ==========================================
 // ANA PARSE FONKSİYONU
 // ==========================================
