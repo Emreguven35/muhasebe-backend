@@ -103,6 +103,7 @@ function extractBestDate(lines) {
     for (let pattern of datePatterns) {
       const match = cleanLine.match(pattern);
       if (match) {
+        console.log('🔍 Tarih match bulundu:', match);
         let day, month, year;
         
         // ISO format (YYYY-MM-DD) kontrolü
@@ -115,6 +116,8 @@ function extractBestDate(lines) {
           month = match[2];
           year = match[3];
         }
+         console.log('🔍 Parse edilen:', { day, month, year });
+         console.log('🔍 Validation:', isValidDate(day, month, year));
         
         if (isValidDate(day, month, year)) {
           // Yıl formatını düzenle
