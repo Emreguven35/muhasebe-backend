@@ -93,6 +93,10 @@ router.post('/upload', authenticateToken, upload.single('receipt'), async (req, 
     
     // 3. Veritabanına kaydet
     console.log('🔍 Veritabanına kaydediliyor...'); 
+    console.log('📦 Kaydedilecek data:', {   // ← EKLE
+  ...parsedData,
+  imagePath: null
+});
     const savedReceipt = await saveReceipt(req.userId, {
       ...parsedData,
       imagePath: null
