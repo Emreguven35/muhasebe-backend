@@ -332,7 +332,9 @@ for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
     }
   }
 }
-
+if (foundTotal) break;  // ← EKLE!
+  }  // ← EKLE! (Ana for döngüsü kapanıyor)
+}  // ← EKLE! (if (!foundTotal) kapanıyor)
 // Hala bulunamadıysa, makul tutarları listele
 if (!foundTotal) {
   let amounts = [];
