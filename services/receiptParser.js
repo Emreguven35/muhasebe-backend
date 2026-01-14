@@ -288,20 +288,25 @@ for (let i = 0; i < lines.length; i++) {
     }
     
     // Sonraki satırlara bak (en fazla 2 satır)
-    for (let j = i + 1; j < Math.min(i + 3, lines.length); j++) {
-      const nextLine = lines[j];
-      // KDV içeren satırları atla
-      if (nextLine.toUpperCase().includes('KDV')) continue;
-      
-      const nextMatch = nextLine.match(/\*?(\d{1,3}(?:[,\.]\d{3})*[,\.]\d{2})/);
-      if (nextMatch) {
-        let amount = nextMatch[1].replace(/\./g, '').replace(',', '.');
-        data.toplamTutar = parseFloat(amount).toFixed(2);
-        foundTotal = true;
-        console.log('💰 TOPLAM sonraki satırda bulundu:', data.toplamTutar);
-        break;
-      }
-    }
+for (let j = i + 1; j < Math.min(i + 3, lines.length); j++) {
+  const nextLine = lines[j];
+  const nextUpper = nextLine.toUpperCase();
+  
+  // KDV, yüzde işareti, indirim içeren satırları atla
+  if (nextUpper.includes('KDV') || nextLine.includes('%') || nextUpper.includes('İNDİRİM')) {
+    console.log('⏭️ Atlanan satır:', nextLine);
+    continue;
+  }
+  
+  const nextMatch = nextLine.match(/\*?(\d{1,3}(?:[,\.]\d{3})*[,\.]\d{2})/);
+  if (nextMatch) {
+    let amount = nextMatch[1].replace(/\./g, '').replace(',', '.');
+    data.toplamTutar = parseFloat(amount).toFixed(2);
+    foundTotal = true;
+    console.log('💰 TOPLAM sonraki satırda bulundu:', data.toplamTutar);
+    break;
+  }
+}
     
     if (foundTotal) break;
   }
