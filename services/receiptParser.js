@@ -67,48 +67,38 @@ function isValidDate(day, month, year) {
   return true;
 }
 
+
 // Gelişmiş tarih çıkarma
 function extractBestDate(lines) {
   const datePatterns = [
-    /^(\d{1,2})[\.\-\/](\d{1,2})[\.\-\/](20\d{2})$/,
-    /^(\d{1,2})[\.\-\/](\d{1,2})[\.\-\/](\d{2})$/,
-    /(\d{1,2})[\.\-\/](\d{1,2})[\.\-\/](20\d{2})\s+\d{1,2}:\d{2}/,
-    /(\d{1,2})[\.\-\/](\d{1,2})[\.\-\/](\d{2})\s+\d{1,2}:\d{2}/
+    // Önce spesifik formatlar - satır temizlenerek
+    /(\d{1,2})[\.\-\/](\d{1,2})[\.\-\/](20\d{2})/,
+    /(\d{1,2})[\.\-\/](\d{1,2})[\.\-\/](\d{2})/
   ];
   
-  // TÜM SATIRLARI TEST ET (öncelik sırasız)
   for (let line of lines) {
     // Ürün/fiyat satırlarını atla
     if (/^\d+\s*X\s*\d+|ADET|KG|LT|GRAM/i.test(line)) continue;
-    
-    // EPDK, NO: içerenleri atla (ama tarih varsa devam et)
     if (/EPDK\s*NO:|VKN|MERSİS\s*NO:/i.test(line)) continue;
     
-    let testLine = line.trim();
+    // Satırdaki : , * gibi karakterleri temizle
+    const cleanLine = line.replace(/[:*]/g, '').trim();
     
-    console.log('🔍 Test edilen satır:', testLine);
+    console.log('🔍 Test edilen satır (temizlenmiş):', cleanLine);
     
     for (let pattern of datePatterns) {
-      const match = testLine.match(pattern);
+      const match = cleanLine.match(pattern);
       if (match) {
         console.log('🔍 Tarih match bulundu:', match);
         
-        let day, month, year;
-        
-        if (match[0].startsWith('20')) {
-          year = match[1];
-          month = match[2];
-          day = match[3];
-        } else {
-          day = match[1];
-          month = match[2];
-          year = match[3];
-        }
+        let day = match[1];
+        let month = match[2];
+        let year = match[3];
         
         console.log('🔍 Parse edilen:', { day, month, year });
-        console.log('🔍 Validation:', isValidDate(day, month, year));
         
-        if (isValidDate(day, month, year)) {
+        // Basit validasyon
+        if (parseInt(month) <= 12 && parseInt(day) <= 31 && isValidDate(day, month, year)) {
           console.log('✅ Geçerli tarih bulundu!');
           
           if (year.length === 2) year = '20' + year;
@@ -182,6 +172,7 @@ function parseReceipt(text) {
   // 3a. Fuzzy matching ile anahtar kelime ara
   const fisPatterns = [
     /(?:F[IİÎ][SŞ]\s*NO?|F[IİÎ][SŞ]\s*NUMARAS[IİÎ])[:\s#\-]*([0-9\/\-]{3,10})/i,
+     /(?:BELGE\s*NO?)[:\s#\-]*([0-9\/\-]{1,10})/i, 
     /(?:BELGE\s*NO?|MAKBUZ\s*NO?)[:\s#\-]*([0-9\/\-]{3,10})/i,
     /(?:Z\s*NO?|Z\s*RAPOR)[:\s#\-]*([0-9\/\-]{3,10})/i,
     /(?:SIRA\s*NO?)[:\s#\-]*([0-9\/\-]{3,10})/i
@@ -239,53 +230,55 @@ function parseReceipt(text) {
     }
   }
 
-  // 4. TOPLAM TUTAR (En büyük sayı genellikle toplam)
-  const totalPatterns = [
-    /(?:TOPLAM|GENEL|ÖDENECEK|TOTAL|TUTAR|NAKİT|KREDİ\s*KART)[:\s]*(\d+[,\.]\d{2})/i,
-    /(?:TOPLAM|GENEL|ÖDENECEK)[:\s]*TL[:\s]*(\d+[,\.]\d{2})/i,
-    /(\d+[,\.]\d{2})\s*(?:TL|₺)/,
-    /(?:ALACAK|ÖDENDİ)[:\s]*(\d+[,\.]\d{2})/i
-  ];
+ // 4. TOPLAM TUTAR (HİYERARŞİK ARAMA)
+let amounts = [];
+let toplamFound = false;
 
-  let maxAmount = 0;
-  let foundTotal = false;
-
-  for (const line of lines) {
-    for (const pattern of totalPatterns) {
-      const match = line.match(pattern);
-      if (match) {
-        const amount = parseFloat(match[1].replace(',', '.'));
-        if (amount > maxAmount) {
-          maxAmount = amount;
-          data.toplamTutar = amount.toFixed(2);
-          foundTotal = true;
-        }
-      }
-    }
-  }
-
-  // Toplam bulunamadıysa en büyük tutarı al (ürün fiyatlarından ayır)
-  if (!foundTotal) {
-    const amounts = [];
-    for (const line of lines) {
-      const matches = line.match(/(\d+[,\.]\d{2})/g);
-      if (matches) {
-        matches.forEach(amt => {
-          const amount = parseFloat(amt.replace(',', '.'));
-          if (amount > 1 && amount < 10000) { // Makul aralık
-            amounts.push(amount);
-          }
-        });
-      }
-    }
+// Önce "TOPLAM" kelimesi geçen satırlarda ara
+for (let i = 0; i < lines.length; i++) {
+  const line = lines[i];
+  const lineUpper = line.toUpperCase();
+  
+  // "TOPKDV" değil, "TOPLAM" arıyoruz (kesin eşleşme)
+  if (/\bTOPLAM\b/i.test(lineUpper) && !/KDV/i.test(lineUpper)) {
+    // Bu satırda veya bir sonraki satırda sayı ara
+    const combined = lines.slice(i, Math.min(i + 2, lines.length)).join(' ');
+    const amountMatch = combined.match(/\*?(\d{1,3}(?:\.\d{3})*(?:,\d{2}))/);
     
-    // En büyük 3 tutarın ortalamasına yakın olanı al (genelde toplam en büyüktür)
-    if (amounts.length > 0) {
-      amounts.sort((a, b) => b - a);
-      data.toplamTutar = amounts[0].toFixed(2);
+    if (amountMatch) {
+      const value = parseFloat(amountMatch[1].replace(/\./g, '').replace(',', '.'));
+      data.toplamTutar = value.toFixed(2);
+      toplamFound = true;
+      console.log('💰 TOPLAM kelimesi yanında bulundu:', value);
+      break;
     }
   }
+}
 
+// Toplam bulunamadıysa, tüm tutarları topla ve en büyüğünü al
+if (!toplamFound) {
+  for (const line of lines) {
+    // KDV içeren satırları atla
+    if (/KDV|KDVLI/i.test(line)) continue;
+    
+    const amountMatches = line.match(/\*?(\d{1,3}(?:\.\d{3})*(?:,\d{2}))/g);
+    if (amountMatches) {
+      amountMatches.forEach(match => {
+        const value = parseFloat(match.replace(/[\*\.]/g, '').replace(',', '.'));
+        if (value > 1 && value < 100000) { // Makul aralık
+          amounts.push(value);
+        }
+      });
+    }
+  }
+  
+  // En büyük tutarı al (Toplam > KDV her zaman)
+  if (amounts.length > 0) {
+    amounts.sort((a, b) => b - a);
+    data.toplamTutar = amounts[0].toFixed(2);
+    console.log('💰 En büyük tutar seçildi:', amounts[0]);
+  }
+}
   // 5. KDV HESAPLAMA
   if (data.toplamTutar) {
     const total = parseFloat(data.toplamTutar);
