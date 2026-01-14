@@ -265,115 +265,68 @@ if (!data.fisNo) {
   }
 }
 
- // 4. TOPLAM TUTAR (İNDİRİM FARKINDALIKLI - GELİŞTİRİLMİŞ)
-let amounts = [];
+ // 4. TOPLAM TUTAR (BASIT VE SAĞLAM)
 let foundTotal = false;
-let hasDiscount = false;
 
-// Önce indirim var mı kontrol et
-for (const line of lines) {
-  if (/İNDİRİM|ISKONTO|TENZİLAT|İNDİRİMİ|\-\d+[,\.]\d{2}/i.test(line)) {
-    hasDiscount = true;
-    console.log('⚠️ İndirimli fiş tespit edildi');
-    break;
-  }
-}
-
-// "TOPLAM" kelimesini ara - aynı satırda veya altında
+// Önce "TOPLAM" kelimesini ara - bir sonraki satırda sayı olacak
 for (let i = 0; i < lines.length; i++) {
   const line = lines[i];
   const lineUpper = line.toUpperCase().trim();
   
-  // TOPLAM kelimesi varsa (ama TOPKDV değilse)
-  if (/\bTOPLAM\b/i.test(lineUpper) && !/KDV/i.test(lineUpper)) {
+  // TOPLAM kelimesi varsa (ama KDV içermiyorsa ve "Toplam ürün" değilse)
+  if (lineUpper === 'TOPLAM' || (lineUpper.startsWith('TOPLAM') && !lineUpper.includes('KDV') && !lineUpper.includes('ÜRÜN'))) {
     console.log('🔍 TOPLAM satırı bulundu:', line);
     
-    // Aynı satırda sayı ara (virgül VEYA nokta ondalık ayracı)
-    const amountMatch = line.match(/\*?(\d{1,3}(?:[,\.]\d{3})*(?:[,\.]\d{2}))/);
-    
-    if (amountMatch) {
-      // Nokta ve virgülleri normalize et
-      let cleanAmount = amountMatch[1];
-      // Eğer içinde hem nokta hem virgül varsa, noktalar binlik ayracıdır
-      if (cleanAmount.includes('.') && cleanAmount.includes(',')) {
-        cleanAmount = cleanAmount.replace(/\./g, '').replace(',', '.');
-      } 
-      // Sadece nokta varsa ve birden fazla varsa binlik ayracıdır
-      else if ((cleanAmount.match(/\./g) || []).length > 1) {
-        cleanAmount = cleanAmount.replace(/\./g, '');
-      }
-      // Son nokta ondalık ayracı olabilir
-      else if (cleanAmount.includes('.')) {
-        const parts = cleanAmount.split('.');
-        if (parts[parts.length - 1].length === 2) {
-          // Son kısım 2 haneliyse ondalık
-          cleanAmount = cleanAmount.replace(/\./g, (match, offset, str) => {
-            return offset === str.lastIndexOf('.') ? '.' : '';
-          });
-        }
-      }
-      
-      const value = parseFloat(cleanAmount.replace(/,/g, '.'));
-      data.toplamTutar = value.toFixed(2);
+    // Önce aynı satırda sayı ara
+    const sameLineMatch = line.match(/\*?(\d{1,3}(?:[,\.]\d{3})*[,\.]\d{2})/);
+    if (sameLineMatch) {
+      let amount = sameLineMatch[1].replace(/\./g, '').replace(',', '.');
+      data.toplamTutar = parseFloat(amount).toFixed(2);
       foundTotal = true;
-      console.log('💰 TOPLAM kelimesi yanında bulundu:', value);
+      console.log('💰 TOPLAM aynı satırda bulundu:', data.toplamTutar);
       break;
-    } else {
-      // Bir sonraki satırda ara
-      if (i + 1 < lines.length) {
-        const nextLine = lines[i + 1];
-        const nextMatch = nextLine.match(/\*?(\d{1,3}(?:[,\.]\d{3})*(?:[,\.]\d{2}))/);
-        if (nextMatch) {
-          let cleanAmount = nextMatch[1];
-          if (cleanAmount.includes('.') && cleanAmount.includes(',')) {
-            cleanAmount = cleanAmount.replace(/\./g, '').replace(',', '.');
-          } else if ((cleanAmount.match(/\./g) || []).length > 1) {
-            cleanAmount = cleanAmount.replace(/\./g, '');
-          }
-          const value = parseFloat(cleanAmount.replace(/,/g, '.'));
-          data.toplamTutar = value.toFixed(2);
-          foundTotal = true;
-          console.log('💰 TOPLAM kelimesinden sonraki satırda bulundu:', value);
-          break;
-        }
+    }
+    
+    // Sonraki satırlara bak (en fazla 2 satır)
+    for (let j = i + 1; j < Math.min(i + 3, lines.length); j++) {
+      const nextLine = lines[j];
+      // KDV içeren satırları atla
+      if (nextLine.toUpperCase().includes('KDV')) continue;
+      
+      const nextMatch = nextLine.match(/\*?(\d{1,3}(?:[,\.]\d{3})*[,\.]\d{2})/);
+      if (nextMatch) {
+        let amount = nextMatch[1].replace(/\./g, '').replace(',', '.');
+        data.toplamTutar = parseFloat(amount).toFixed(2);
+        foundTotal = true;
+        console.log('💰 TOPLAM sonraki satırda bulundu:', data.toplamTutar);
+        break;
       }
     }
+    
+    if (foundTotal) break;
   }
 }
 
-// Toplam bulunamadıysa alternatif yöntemler
+// Toplam bulunamadıysa en büyük tutarı al
 if (!foundTotal) {
+  let amounts = [];
   for (const line of lines) {
-    if (/KDV|KDVLI|İNDİRİM|ISKONTO/i.test(line)) continue;
+    if (line.toUpperCase().includes('KDV')) continue;
     
-    const amountMatches = line.match(/\*?(\d{1,3}(?:[,\.]\d{3})*(?:[,\.]\d{2}))/g);
-    if (amountMatches) {
-      amountMatches.forEach(match => {
-        let cleanAmount = match.replace(/\*/g, '');
-        if (cleanAmount.includes('.') && cleanAmount.includes(',')) {
-          cleanAmount = cleanAmount.replace(/\./g, '').replace(',', '.');
-        } else if ((cleanAmount.match(/\./g) || []).length > 1) {
-          cleanAmount = cleanAmount.replace(/\./g, '');
-        }
-        const value = parseFloat(cleanAmount.replace(/,/g, '.'));
-        if (value > 1 && value < 100000) {
-          amounts.push(value);
-        }
+    const matches = line.match(/\*?(\d{1,3}(?:[,\.]\d{3})*[,\.]\d{2})/g);
+    if (matches) {
+      matches.forEach(m => {
+        let amount = m.replace(/[\*\.]/g, '').replace(',', '.');
+        const value = parseFloat(amount);
+        if (value > 10 && value < 100000) amounts.push(value);
       });
     }
   }
   
   if (amounts.length > 0) {
     amounts.sort((a, b) => b - a);
-    
-    if (hasDiscount && amounts.length > 1) {
-      // İndirim sonrası en küçük büyük tutarı al
-      data.toplamTutar = amounts[amounts.length - 1].toFixed(2);
-      console.log('💰 İndirimli fişte son tutar seçildi:', amounts[amounts.length - 1]);
-    } else {
-      data.toplamTutar = amounts[0].toFixed(2);
-      console.log('💰 En büyük tutar seçildi:', amounts[0]);
-    }
+    data.toplamTutar = amounts[0].toFixed(2);
+    console.log('💰 En büyük tutar:', data.toplamTutar);
   }
 }
   // 5. KDV HESAPLAMA
