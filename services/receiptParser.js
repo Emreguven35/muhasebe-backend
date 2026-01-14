@@ -303,33 +303,33 @@ for (let i = 0; i < lines.length; i++) {
       }
     }
     
-    // Sonraki satırlara bak
-    for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
-      const nextLine = lines[j];
-      const nextUpper = nextLine.toUpperCase();
-      
-      // KDV, %, İNDİRİM, TOPKDV atla
-      if (nextUpper.includes('KDV') || nextLine.includes('%') || nextUpper.includes('İNDİRİM') || nextUpper.includes('ÜRÜN')) {
-        console.log('⏭️ Atlanan satır:', nextLine);
-        continue;
-      }
-      
-      const nextMatch = nextLine.match(/\*?(\d{1,3}(?:[,\.]\d{3})*[,\.]\d{2})/);
-      if (nextMatch) {
-        let amount = nextMatch[1].replace(/\./g, '').replace(',', '.');
-        const value = parseFloat(amount);
-        
-        // Makul aralıkta mı kontrol et
-        if (value > 10 && value < 100000) {
-          data.toplamTutar = value.toFixed(2);
-          foundTotal = true;
-          console.log('💰 TOPLAM sonraki satırda:', data.toplamTutar);
-          break;
-        }
-      }
-    }
+   // Sonraki satırlara bak
+for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
+  const nextLine = lines[j];
+  const nextUpper = nextLine.toUpperCase();
+  
+  // KDV, %, İNDİRİM, TOPKDV, NEGATİF SAYILAR atla
+  if (nextUpper.includes('KDV') || 
+      nextLine.includes('%') || 
+      nextUpper.includes('İNDİRİM') || 
+      nextUpper.includes('ÜRÜN') ||
+      nextLine.includes('-')) {  // ← NEGATİF SAYILARI ATLA
+    console.log('⏭️ Atlanan satır:', nextLine);
+    continue;
+  }
+  
+  const nextMatch = nextLine.match(/\*?(\d{1,3}(?:[,\.]\d{3})*[,\.]\d{2})/);
+  if (nextMatch) {
+    let amount = nextMatch[1].replace(/\./g, '').replace(',', '.');
+    const value = parseFloat(amount);
     
-    if (foundTotal) break;
+    // Makul aralıkta mı kontrol et
+    if (value > 10 && value < 100000) {
+      data.toplamTutar = value.toFixed(2);
+      foundTotal = true;
+      console.log('💰 TOPLAM sonraki satırda:', data.toplamTutar);
+      break;
+    }
   }
 }
 
