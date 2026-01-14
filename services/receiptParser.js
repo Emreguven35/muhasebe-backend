@@ -167,16 +167,15 @@ function parseReceipt(text) {
     console.log('📅 Tespit edilen tarih:', data.tarih);
   }
 
-  // 3. FİŞ NO (GELİŞMİŞ ALGORİTMA)
-  
-  // 3a. Fuzzy matching ile anahtar kelime ara
-  const fisPatterns = [
+  // 3. FİŞ NO (BELGE NO ve İŞLEM NO öncelikli)
+const fisPatterns = [
+    /(?:BELGE\s*NO?)[:\s#\-]*([0-9\/\-]{1,20})/i,  // ← EN ÖNCELİKLİ
+    /(?:IŞLEM\s*NO?|İŞLEM\s*NO?)[:\s#\-]*([0-9\/\-]{4,20})/i,  // ← İKİNCİ
     /(?:F[IİÎ][SŞ]\s*NO?|F[IİÎ][SŞ]\s*NUMARAS[IİÎ])[:\s#\-]*([0-9\/\-]{3,10})/i,
-     /(?:BELGE\s*NO?)[:\s#\-]*([0-9\/\-]{1,10})/i, 
-    /(?:BELGE\s*NO?|MAKBUZ\s*NO?)[:\s#\-]*([0-9\/\-]{3,10})/i,
+    /(?:MAKBUZ\s*NO?)[:\s#\-]*([0-9\/\-]{3,10})/i,
     /(?:Z\s*NO?|Z\s*RAPOR)[:\s#\-]*([0-9\/\-]{3,10})/i,
     /(?:SIRA\s*NO?)[:\s#\-]*([0-9\/\-]{3,10})/i
-  ];
+];
 
   for (const pattern of fisPatterns) {
     const match = fullContent.match(pattern);
@@ -230,53 +229,81 @@ function parseReceipt(text) {
     }
   }
 
- // 4. TOPLAM TUTAR (HİYERARŞİK ARAMA)
+ // 4. TOPLAM TUTAR (İNDİRİM FARKINDALIKLI)
 let amounts = [];
-let toplamFound = false;
+let foundTotal = false;
+let hasDiscount = false;
 
-// Önce "TOPLAM" kelimesi geçen satırlarda ara
+// Önce indirim var mı kontrol et
+for (const line of lines) {
+  if (/İNDİRİM|ISKONTO|TENZİLAT|\-\d+[,\.]\d{2}/i.test(line)) {
+    hasDiscount = true;
+    console.log('⚠️ İndirimli fiş tespit edildi');
+    break;
+  }
+}
+
+// "TOPLAM" kelimesini ara (öncelikli yöntem)
 for (let i = 0; i < lines.length; i++) {
   const line = lines[i];
-  const lineUpper = line.toUpperCase();
+  const lineUpper = line.toUpperCase().trim();
   
-  // "TOPKDV" değil, "TOPLAM" arıyoruz (kesin eşleşme)
-  if (/\bTOPLAM\b/i.test(lineUpper) && !/KDV/i.test(lineUpper)) {
-    // Bu satırda veya bir sonraki satırda sayı ara
-    const combined = lines.slice(i, Math.min(i + 2, lines.length)).join(' ');
-    const amountMatch = combined.match(/\*?(\d{1,3}(?:\.\d{3})*(?:,\d{2}))/);
+  // TOPLAM kelimesi varsa (ama TOPKDV değilse)
+  if (lineUpper.startsWith("TOPLAM") || (lineUpper.includes("TOPLAM") && !lineUpper.includes("KDV"))) {
+    // Aynı satırda sayı ara
+    const amountMatch = line.match(/\*?(\d{1,3}(?:\.\d{3})*(?:,\d{2}))/);
     
     if (amountMatch) {
       const value = parseFloat(amountMatch[1].replace(/\./g, '').replace(',', '.'));
       data.toplamTutar = value.toFixed(2);
-      toplamFound = true;
+      foundTotal = true;
       console.log('💰 TOPLAM kelimesi yanında bulundu:', value);
       break;
+    } else {
+      // Bir sonraki satırda ara
+      if (i + 1 < lines.length) {
+        const nextLine = lines[i + 1];
+        const nextMatch = nextLine.match(/\*?(\d{1,3}(?:\.\d{3})*(?:,\d{2}))/);
+        if (nextMatch) {
+          const value = parseFloat(nextMatch[1].replace(/\./g, '').replace(',', '.'));
+          data.toplamTutar = value.toFixed(2);
+          foundTotal = true;
+          console.log('💰 TOPLAM kelimesinden sonraki satırda bulundu:', value);
+          break;
+        }
+      }
     }
   }
 }
 
-// Toplam bulunamadıysa, tüm tutarları topla ve en büyüğünü al
-if (!toplamFound) {
+// Toplam bulunamadıysa alternatif yöntemler
+if (!foundTotal) {
   for (const line of lines) {
-    // KDV içeren satırları atla
-    if (/KDV|KDVLI/i.test(line)) continue;
+    // KDV ve indirim satırlarını atla
+    if (/KDV|KDVLI|İNDİRİM|ISKONTO/i.test(line)) continue;
     
     const amountMatches = line.match(/\*?(\d{1,3}(?:\.\d{3})*(?:,\d{2}))/g);
     if (amountMatches) {
       amountMatches.forEach(match => {
         const value = parseFloat(match.replace(/[\*\.]/g, '').replace(',', '.'));
-        if (value > 1 && value < 100000) { // Makul aralık
+        if (value > 1 && value < 100000) {
           amounts.push(value);
         }
       });
     }
   }
   
-  // En büyük tutarı al (Toplam > KDV her zaman)
   if (amounts.length > 0) {
     amounts.sort((a, b) => b - a);
-    data.toplamTutar = amounts[0].toFixed(2);
-    console.log('💰 En büyük tutar seçildi:', amounts[0]);
+    
+    // İndirim varsa, en büyük değil SON büyük tutarı al
+    if (hasDiscount && amounts.length > 1) {
+      data.toplamTutar = amounts[1].toFixed(2); // İkinci büyük tutar
+      console.log('💰 İndirimli fişte ikinci büyük tutar seçildi:', amounts[1]);
+    } else {
+      data.toplamTutar = amounts[0].toFixed(2);
+      console.log('💰 En büyük tutar seçildi:', amounts[0]);
+    }
   }
 }
   // 5. KDV HESAPLAMA
@@ -367,18 +394,23 @@ if (!toplamFound) {
   }
 
   // 6. GİDER CİNSİ BELİRLE
-  const textUpper = text.toUpperCase();
-  if (textUpper.includes('OTOPARK') || textUpper.includes('PARK')) {
-    data.giderCinsi = 'OTOPARK';
-  } else if (textUpper.includes('MARKET') || textUpper.includes('SÜPERMARKET') || textUpper.includes('GIDA')) {
-    data.giderCinsi = 'MARKET';
-  } else if (textUpper.includes('RESTORAN') || textUpper.includes('KAFE') || textUpper.includes('YİYECEK') || textUpper.includes('LOKANTA')) {
-    data.giderCinsi = 'YİYECEK';
-  } else if (textUpper.includes('YAKIT') || textUpper.includes('PETROL') || textUpper.includes('BENZİN') || textUpper.includes('MOTORIN')) {
-    data.giderCinsi = 'YAKIT';
-  } else if (textUpper.includes('TAKSI') || textUpper.includes('UBER') || textUpper.includes('ULAŞIM')) {
-    data.giderCinsi = 'ULAŞIM';
-  }
+const textUpper = text.toUpperCase();
+if (textUpper.includes('OTOPARK') || textUpper.includes('PARK')) {
+  data.giderCinsi = 'OTOPARK';
+} else if (textUpper.includes('MARKET') || textUpper.includes('SÜPERMARKET') || textUpper.includes('GIDA')) {
+  data.giderCinsi = 'MARKET';
+} else if (textUpper.includes('RESTORAN') || textUpper.includes('KAFE') || textUpper.includes('YİYECEK') || textUpper.includes('LOKANTA')) {
+  data.giderCinsi = 'YİYECEK';
+} else if (textUpper.includes('YAKIT') || textUpper.includes('PETROL') || textUpper.includes('BENZİN') || textUpper.includes('MOTORIN')) {
+  data.giderCinsi = 'YAKIT';
+} else if (textUpper.includes('TAKSI') || textUpper.includes('UBER') || textUpper.includes('ULAŞIM')) {
+  data.giderCinsi = 'ULAŞIM';
+} else if (textUpper.includes('GİYİM') || textUpper.includes('TEKSTIL') || textUpper.includes('MODA') || 
+           textUpper.includes('GÖMLEK') || textUpper.includes('PANTOLON') || textUpper.includes('AYAKKABI') ||
+           textUpper.includes('ZARA') || textUpper.includes('H&M') || textUpper.includes('MANGO') || 
+           textUpper.includes('KOTON') || textUpper.includes('LC WAIKIKI') || textUpper.includes('DEFACTO')) {
+  data.giderCinsi = 'GİYİM'; // ← YENİ KATEGORİ
+}
 
   console.log('✅ Parse sonucu:', data);
   
