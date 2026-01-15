@@ -282,6 +282,7 @@ for (const line of lines) {
 
 // "TOPLAM" kelimesini ara
 for (let i = 0; i < lines.length; i++) {
+   if (foundTotal) break; 
   const line = lines[i];
   const lineUpper = line.toUpperCase().trim();
   
