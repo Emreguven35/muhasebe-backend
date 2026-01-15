@@ -288,11 +288,26 @@ for (let i = 0; i < lines.length; i++) {
   if (lineUpper === 'TOPLAM' || (lineUpper.startsWith('TOPLAM') && !lineUpper.includes('KDV') && !lineUpper.includes('ÜRÜN'))) {
     console.log('🔍 TOPLAM satırı bulundu:', line);
     
-    // Önce aynı satırda
-const sameLineMatch = line.match(/\*?(\d{1,3}(?:[,\.\/]\d{3})*[,\.\/]\d{2})/);  
-  if (sameLineMatch) {
-      let amount = sameLineMatch[1].replace(/\./g, '').replace(',', '.');
-      const value = parseFloat(amount);
+   // Önce aynı satırda
+const sameLineMatch = line.match(/\*?(\d{1,3}(?:[,\.\/]\d{3})*[,\.\/]\d{2})/);
+if (sameLineMatch) {
+  let amount = sameLineMatch[1];
+  
+  // Slash'ı virgüle çevir (OCR hatası)
+  amount = amount.replace(/\//g, ',');
+  
+  // Normalize et
+  amount = amount.replace(/\./g, '').replace(',', '.');
+  
+  const value = parseFloat(amount);
+  
+  if (!hasDiscount || value < 20000) {
+    data.toplamTutar = value.toFixed(2);
+    foundTotal = true;
+    console.log('💰 TOPLAM aynı satırda:', data.toplamTutar);
+    break;
+  }
+}
       
       // İndirim varsa, tutar indirimsiz fiyattan küçük olmalı
       if (!hasDiscount || value < 20000) { // Mantıklı kontrol
@@ -325,17 +340,22 @@ for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
   }
   
   const nextMatch = nextLine.match(/\*?(\d{1,3}(?:[,\.\/]\d{3})*[,\.\/]\d{2})/);
-  if (nextMatch) {
-    let amount = nextMatch[1].replace(/\./g, '').replace(',', '.');
-    const value = parseFloat(amount);
-    
-    // Makul aralıkta mı kontrol et
-    if (value > 10 && value < 100000) {
-      data.toplamTutar = value.toFixed(2);
-      foundTotal = true;
-      console.log('💰 TOPLAM sonraki satırda:', data.toplamTutar);
-      break;
-    }
+if (nextMatch) {
+  let amount = nextMatch[1];
+  
+  // Slash'ı virgüle çevir
+  amount = amount.replace(/\//g, ',');
+  
+  // Normalize et
+  amount = amount.replace(/\./g, '').replace(',', '.');
+  
+  const value = parseFloat(amount);
+  
+  if (value > 10 && value < 100000) {
+    data.toplamTutar = value.toFixed(2);
+    foundTotal = true;
+    console.log('💰 TOPLAM sonraki satırda:', data.toplamTutar);
+    break;
   }
 }
 if (foundTotal) break;  // ← EKLE!
