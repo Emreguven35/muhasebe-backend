@@ -264,118 +264,100 @@ if (!data.fisNo) {
     }
   }
 }
-// 4. TOPLAM TUTAR (İNDİRİM FARKINDALIKLI - SON VERSİYON)
+// 4. TOPLAM TUTAR (İNDİRİM FARKINDALIKLI)
 let foundTotal = false;
 let hasDiscount = false;
-let discountAmount = 0;
 
-// Önce indirim tutarını bul
+// Önce indirim var mı kontrol et
 for (const line of lines) {
   const negativeMatch = line.match(/\*?\-(\d{1,3}(?:[,\.]\d{3})*[,\.]\d{2})/);
   if (negativeMatch) {
-    discountAmount = parseFloat(negativeMatch[1].replace(/\./g, '').replace(',', '.'));
     hasDiscount = true;
-    console.log('⚠️ İndirim tutarı bulundu:', discountAmount);
+    console.log('⚠️ İndirim tutarı bulundu');
     break;
   }
 }
 
 // "TOPLAM" kelimesini ara
 for (let i = 0; i < lines.length; i++) {
-   if (foundTotal) break; 
+  if (foundTotal) break;
+  
   const line = lines[i];
   const lineUpper = line.toUpperCase().trim();
   
   if (lineUpper === 'TOPLAM' || 
-    (lineUpper.startsWith('TOPLAM') && 
-     !lineUpper.includes('KDV') && 
-     !lineUpper.includes('ÜRÜN') && 
-     !lineUpper.includes('TARİH') &&  // ← EKLE
-     !lineUpper.includes('TARIH'))) {  // ← EKLE (i olmadan)
+      (lineUpper.startsWith('TOPLAM') && 
+       !lineUpper.includes('KDV') && 
+       !lineUpper.includes('ÜRÜN') && 
+       !lineUpper.includes('TARİH') &&
+       !lineUpper.includes('TARIH'))) {
+    
     console.log('🔍 TOPLAM satırı bulundu:', line);
     
-   // Önce aynı satırda
-const sameLineMatch = line.match(/\*?(\d{1,3}(?:[,\.\/]\d{3})*[,\.\/]\d{2})/);
-if (sameLineMatch) {
-  let amount = sameLineMatch[1];
-  amount = amount.replace(/\//g, ','); // Slash'ı virgüle
-  
-  // Akıllı normalize: Hem nokta hem virgül varsa, nokta binlik ayracıdır
-  if (amount.includes('.') && amount.includes(',')) {
-    amount = amount.replace(/\./g, '').replace(',', '.');
-  } 
-  // Sadece virgül varsa, virgül ondalık ayracıdır
-  else if (amount.includes(',')) {
-    amount = amount.replace(',', '.');
-  }
-  // Sadece nokta varsa ve 2 hane sonra geliyorsa ondalık ayracıdır
-  // Örn: 104.00 → 104.00, 1.234 → 1234
-  
-  const value = parseFloat(amount);
-  
-  if (!hasDiscount || value < 20000) {
-    data.toplamTutar = value.toFixed(2);
-    foundTotal = true;
-    console.log('💰 TOPLAM aynı satırda:', data.toplamTutar);
-    break;
-  }
-}
+    // Aynı satırda sayı var mı?
+    const sameLineMatch = line.match(/\*?(\d{1,3}(?:[,\.\/]\d{3})*[,\.\/]\d{2})/);
+    if (sameLineMatch) {
+      let amount = sameLineMatch[1].replace(/\//g, ',');
       
-    
+      if (amount.includes('.') && amount.includes(',')) {
+        amount = amount.replace(/\./g, '').replace(',', '.');
+      } else if (amount.includes(',')) {
+        amount = amount.replace(',', '.');
+      }
+      
+      const value = parseFloat(amount);
+      
+      if (!hasDiscount || value < 20000) {
+        data.toplamTutar = value.toFixed(2);
+        foundTotal = true;
+        console.log('💰 TOPLAM aynı satırda:', data.toplamTutar);
+        break;
+      }
     }
     
-   // Sonraki satırlara bak
-for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
-  const nextLine = lines[j];
-  const nextUpper = nextLine.toUpperCase();
-  
-   
-  // TARİH içeren satırları atla
-  if (nextUpper.includes('TARİH') || nextUpper.includes('TARIH')) {  // ← EKLE
-    console.log('⏭️ Atlanan satır:', nextLine);
-    continue;
-  }
-  // KDV, %, İNDİRİM, TOPKDV, NEGATİF SAYILAR atla
-  if (nextUpper.includes('KDV') || 
-      nextLine.includes('%') || 
-      nextUpper.includes('İNDİRİM') || 
-      nextUpper.includes('ÜRÜN') ||
-       nextUpper.includes('NAKİT') ||      // ← EKLE
-      nextUpper.includes('NAKIT') ||      // ← EKLE
-      nextUpper.includes('PARA') ||       // ← EKLE
-      nextUpper.includes('ÜSTÜ') ||       // ← EKLE
-      nextUpper.includes('KREDİ') ||      // ← EKLE
-      nextUpper.includes('KART') ||       // ← EKLE
-      nextLine.includes('-')) {  // ← NEGATİF SAYILARI ATLA
-    console.log('⏭️ Atlanan satır:', nextLine);
-    continue;
-  }
-  
-  const nextMatch = nextLine.match(/\*?(\d{1,3}(?:[,\.\/]\d{3})*[,\.\/]\d{2})/);
-if (nextMatch) {
-  let amount = nextMatch[1];
-  amount = amount.replace(/\//g, ',');
-  
-  // Akıllı normalize
-  if (amount.includes('.') && amount.includes(',')) {
-    amount = amount.replace(/\./g, '').replace(',', '.');
-  } else if (amount.includes(',')) {
-    amount = amount.replace(',', '.');
-  }
-  
-  const value = parseFloat(amount);
-  
-  if (value > 10 && value < 100000) {
-    data.toplamTutar = value.toFixed(2);
-    foundTotal = true;
-    console.log('💰 TOPLAM sonraki satırda:', data.toplamTutar);
-    break;
+    // Sonraki satırlara bak
+    for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
+      const nextLine = lines[j];
+      const nextUpper = nextLine.toUpperCase();
+      
+      // Filtreleme
+      if (nextUpper.includes('TARİH') || nextUpper.includes('TARIH') ||
+          nextUpper.includes('KDV') || nextLine.includes('%') || 
+          nextUpper.includes('İNDİRİM') || nextUpper.includes('ÜRÜN') ||
+          nextUpper.includes('NAKİT') || nextUpper.includes('NAKIT') ||
+          nextUpper.includes('PARA') || nextUpper.includes('ÜSTÜ') ||
+          nextUpper.includes('KREDİ') || nextUpper.includes('KART') ||
+          nextLine.includes('-')) {
+        console.log('⏭️ Atlanan satır:', nextLine);
+        continue;
+      }
+      
+      const nextMatch = nextLine.match(/\*?(\d{1,3}(?:[,\.\/]\d{3})*[,\.\/]\d{2})/);
+      if (nextMatch) {
+        let amount = nextMatch[1].replace(/\//g, ',');
+        
+        if (amount.includes('.') && amount.includes(',')) {
+          amount = amount.replace(/\./g, '').replace(',', '.');
+        } else if (amount.includes(',')) {
+          amount = amount.replace(',', '.');
+        }
+        
+        const value = parseFloat(amount);
+        
+        if (value > 10 && value < 100000) {
+          data.toplamTutar = value.toFixed(2);
+          foundTotal = true;
+          console.log('💰 TOPLAM sonraki satırda:', data.toplamTutar);
+          break;
+        }
+      }
+    }
+    
+    if (foundTotal) break;
   }
 }
-if (foundTotal) break;  // ← EKLE!
-  }  // ← EKLE! (Ana for döngüsü kapanıyor)
-}  // ← EKLE! (if (!foundTotal) kapanıyor)
-// Hala bulunamadıysa, makul tutarları listele
+
+// Hala bulunamadıysa en büyük tutarı al
 if (!foundTotal) {
   let amounts = [];
   for (const line of lines) {
@@ -384,7 +366,7 @@ if (!foundTotal) {
     const matches = line.match(/\*?(\d{1,3}(?:[,\.]\d{3})*[,\.]\d{2})/g);
     if (matches) {
       matches.forEach(m => {
-        let amount = m.replace(/[\*]/g, '').replace(/\./g, '').replace(',', '.');
+        let amount = m.replace(/[\*\.]/g, '').replace(',', '.');
         const value = parseFloat(amount);
         if (value > 10 && value < 50000) amounts.push(value);
       });
@@ -392,13 +374,12 @@ if (!foundTotal) {
   }
   
   if (amounts.length > 0) {
-    // İndirim varsa, indirim öncesi tutardan küçük olanları al
     if (hasDiscount) {
-      amounts = amounts.filter(a => a < 15000); // İndirim sonrası makul aralık
+      amounts = amounts.filter(a => a < 15000);
     }
     amounts.sort((a, b) => b - a);
     data.toplamTutar = amounts[0].toFixed(2);
-    console.log('💰 Seçilen tutar:', data.toplamTutar, 'Liste:', amounts.slice(0, 3));
+    console.log('💰 Seçilen tutar:', data.toplamTutar);
   }
 }
   // 5. KDV HESAPLAMA
