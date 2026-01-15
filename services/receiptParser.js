@@ -298,12 +298,18 @@ for (let i = 0; i < lines.length; i++) {
 const sameLineMatch = line.match(/\*?(\d{1,3}(?:[,\.\/]\d{3})*[,\.\/]\d{2})/);
 if (sameLineMatch) {
   let amount = sameLineMatch[1];
+  amount = amount.replace(/\//g, ','); // Slash'ı virgüle
   
-  // Slash'ı virgüle çevir (OCR hatası)
-  amount = amount.replace(/\//g, ',');
-  
-  // Normalize et
-  amount = amount.replace(/\./g, '').replace(',', '.');
+  // Akıllı normalize: Hem nokta hem virgül varsa, nokta binlik ayracıdır
+  if (amount.includes('.') && amount.includes(',')) {
+    amount = amount.replace(/\./g, '').replace(',', '.');
+  } 
+  // Sadece virgül varsa, virgül ondalık ayracıdır
+  else if (amount.includes(',')) {
+    amount = amount.replace(',', '.');
+  }
+  // Sadece nokta varsa ve 2 hane sonra geliyorsa ondalık ayracıdır
+  // Örn: 104.00 → 104.00, 1.234 → 1234
   
   const value = parseFloat(amount);
   
@@ -348,12 +354,14 @@ for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
   const nextMatch = nextLine.match(/\*?(\d{1,3}(?:[,\.\/]\d{3})*[,\.\/]\d{2})/);
 if (nextMatch) {
   let amount = nextMatch[1];
-  
-  // Slash'ı virgüle çevir
   amount = amount.replace(/\//g, ',');
   
-  // Normalize et
-  amount = amount.replace(/\./g, '').replace(',', '.');
+  // Akıllı normalize
+  if (amount.includes('.') && amount.includes(',')) {
+    amount = amount.replace(/\./g, '').replace(',', '.');
+  } else if (amount.includes(',')) {
+    amount = amount.replace(',', '.');
+  }
   
   const value = parseFloat(amount);
   
