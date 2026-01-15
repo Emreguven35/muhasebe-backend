@@ -323,6 +323,12 @@ for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
   const nextLine = lines[j];
   const nextUpper = nextLine.toUpperCase();
   
+   
+  // TARİH içeren satırları atla
+  if (nextUpper.includes('TARİH') || nextUpper.includes('TARIH')) {  // ← EKLE
+    console.log('⏭️ Atlanan satır:', nextLine);
+    continue;
+  }
   // KDV, %, İNDİRİM, TOPKDV, NEGATİF SAYILAR atla
   if (nextUpper.includes('KDV') || 
       nextLine.includes('%') || 
