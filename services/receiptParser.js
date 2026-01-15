@@ -309,13 +309,7 @@ if (sameLineMatch) {
   }
 }
       
-      // İndirim varsa, tutar indirimsiz fiyattan küçük olmalı
-      if (!hasDiscount || value < 20000) { // Mantıklı kontrol
-        data.toplamTutar = value.toFixed(2);
-        foundTotal = true;
-        console.log('💰 TOPLAM aynı satırda:', data.toplamTutar);
-        break;
-      }
+    
     }
     
    // Sonraki satırlara bak
