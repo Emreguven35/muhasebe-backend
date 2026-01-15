@@ -313,6 +313,12 @@ for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
       nextLine.includes('%') || 
       nextUpper.includes('İNDİRİM') || 
       nextUpper.includes('ÜRÜN') ||
+       nextUpper.includes('NAKİT') ||      // ← EKLE
+      nextUpper.includes('NAKIT') ||      // ← EKLE
+      nextUpper.includes('PARA') ||       // ← EKLE
+      nextUpper.includes('ÜSTÜ') ||       // ← EKLE
+      nextUpper.includes('KREDİ') ||      // ← EKLE
+      nextUpper.includes('KART') ||       // ← EKLE
       nextLine.includes('-')) {  // ← NEGATİF SAYILARI ATLA
     console.log('⏭️ Atlanan satır:', nextLine);
     continue;
