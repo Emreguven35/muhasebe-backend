@@ -286,7 +286,12 @@ for (let i = 0; i < lines.length; i++) {
   const line = lines[i];
   const lineUpper = line.toUpperCase().trim();
   
-  if (lineUpper === 'TOPLAM' || (lineUpper.startsWith('TOPLAM') && !lineUpper.includes('KDV') && !lineUpper.includes('ÜRÜN'))) {
+  if (lineUpper === 'TOPLAM' || 
+    (lineUpper.startsWith('TOPLAM') && 
+     !lineUpper.includes('KDV') && 
+     !lineUpper.includes('ÜRÜN') && 
+     !lineUpper.includes('TARİH') &&  // ← EKLE
+     !lineUpper.includes('TARIH'))) {  // ← EKLE (i olmadan)
     console.log('🔍 TOPLAM satırı bulundu:', line);
     
    // Önce aynı satırda
