@@ -289,8 +289,8 @@ for (let i = 0; i < lines.length; i++) {
     console.log('🔍 TOPLAM satırı bulundu:', line);
     
     // Önce aynı satırda
-    const sameLineMatch = line.match(/\*?(\d{1,3}(?:[,\.]\d{3})*[,\.]\d{2})/);
-    if (sameLineMatch) {
+const sameLineMatch = line.match(/\*?(\d{1,3}(?:[,\.\/]\d{3})*[,\.\/]\d{2})/);  
+  if (sameLineMatch) {
       let amount = sameLineMatch[1].replace(/\./g, '').replace(',', '.');
       const value = parseFloat(amount);
       
@@ -324,7 +324,7 @@ for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
     continue;
   }
   
-  const nextMatch = nextLine.match(/\*?(\d{1,3}(?:[,\.]\d{3})*[,\.]\d{2})/);
+  const nextMatch = nextLine.match(/\*?(\d{1,3}(?:[,\.\/]\d{3})*[,\.\/]\d{2})/);
   if (nextMatch) {
     let amount = nextMatch[1].replace(/\./g, '').replace(',', '.');
     const value = parseFloat(amount);
