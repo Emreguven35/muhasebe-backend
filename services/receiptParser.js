@@ -11,20 +11,22 @@ function normalizeForDigits(text) {
     .replace(/B/g, '8')
     .replace(/Z/g, '2');
 }
+
 // Gider cinsi kategori eşleştirme sistemi
 const categoryKeywords = {
   'GİYİM': ['GÖMLEK', 'GOMLEK', 'PANTOLON', 'CEKET', 'MONT', 'AYAKKABI', 'ÇORAP', 
-            'TISORT', 'ETEK', 'ELDIVEN', 'ŞAPKA', 'KEMER', 'TEKSTIL', 'MODA',
+            'TISORT', 'ETEK', 'ELDIVEN', 'ŞAPKA', 'KEMER', 'TEKSTİL', 'MODA',
             'LACOSTE', 'ZARA', 'H&M', 'MANGO', 'KOTON', 'LC WAIKIKI', 'DEFACTO',
             'PULL&BEAR', 'BERSHKA', 'STRADIVARIUS', 'MAVI', 'COLIN'],
   'GIDA': ['PEYNIR', 'SÜT', 'EKMEK', 'YUMURTA', 'ET', 'TAVUK', 'BALIK', 'SEBZE',
            'MEYVE', 'GIDA', 'MARKET', 'SÜPERMARKET', 'A101', 'BİM', 'ŞOK', 'MİGROS'],
   'YİYECEK': ['RESTORAN', 'KAFE', 'CAFE', 'LOKANTA', 'PİZZA', 'BURGER', 'KEBAP',
               'DÖNER', 'LAHMACUN', 'PİDE', 'SUSHI', 'MCDONALD', 'BURGER KING'],
-  'YAKIT': ['YAKIT', 'PETROL', 'BENZİN', 'MOTORIN', 'LPG', 'SHELL', 'OPET', 'BP'],
-  'ULAŞIM': ['TAKSI', 'UBER', 'BITAKSI', 'METRO', 'OTOBÜS', 'OTOBUS', 'DOLMUŞ'],
+  'YAKIT': ['YAKIT', 'PETROL', 'BENZİN', 'MOTORİN', 'LPG', 'SHELL', 'OPET', 'BP'],
+  'ULAŞIM': ['TAKSİ', 'UBER', 'BİTAKSİ', 'METRO', 'OTOBÜS', 'OTOBUS', 'DOLMUŞ'],
   'OTOPARK': ['OTOPARK', 'PARK', 'PARKING']
 };
+
 // Gider cinsi belirleme fonksiyonu
 function determineExpenseCategory(text) {
   const textUpper = text.toUpperCase();
@@ -41,6 +43,7 @@ function determineExpenseCategory(text) {
   
   return 'DİĞER';
 }
+
 // Fuzzy string matching - Levenshtein distance
 function levenshtein(a, b) {
   const matrix = [];
@@ -96,7 +99,6 @@ function isValidDate(day, month, year) {
   return true;
 }
 
-
 // Gelişmiş tarih çıkarma
 function extractBestDate(lines) {
   const datePatterns = [
@@ -148,6 +150,102 @@ function extractBestDate(lines) {
   console.log('❌ Hiçbir geçerli tarih bulunamadı');
   return null;
 }
+
+// ==========================================
+// YENİ: DETAYLI KDV ÇIKARMA FONKSİYONU
+// ==========================================
+function extractAllKDV(lines, totalAmount) {
+  const kdvData = {
+    kdv1_amounts: [],
+    kdv10_amounts: [],
+    kdv20_amounts: []
+  };
+
+  console.log('📊 KDV çıkarma başladı...');
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const lineUpper = line.toUpperCase();
+    
+    // KDV içeren satırları bul
+    if (!/KDV|K\.D\.V/i.test(line)) continue;
+    
+    console.log('🔍 KDV satırı:', line);
+    
+    // KDV oranını tespit et
+    let kdvRate = null;
+    
+    if (/%1[^0]|YÜZDE\s*1[^0]|KDV\s*%?\s*1[^0]|\(%1\)/i.test(lineUpper)) {
+      kdvRate = 1;
+    } else if (/%10|YÜZDE\s*10|KDV\s*%?\s*10|\(%10\)/i.test(lineUpper)) {
+      kdvRate = 10;
+    } else if (/%20|YÜZDE\s*20|KDV\s*%?\s*20|\(%20\)/i.test(lineUpper)) {
+      kdvRate = 20;
+    }
+    
+    if (!kdvRate) {
+      console.log('⚠️ KDV oranı tespit edilemedi, satırı atla');
+      continue;
+    }
+    
+    // Bu satırda ve sonraki 2 satırda KDV tutarını ara
+    const searchLines = [line, ...lines.slice(i + 1, i + 3)];
+    
+    for (const searchLine of searchLines) {
+      // Para formatında değer bul (123,45 veya 1.234,56)
+      const amountMatches = searchLine.match(/(\d{1,3}(?:[,\.]\d{3})*[,\.]\d{2})/g);
+      
+      if (amountMatches) {
+        for (const match of amountMatches) {
+          let amount = match;
+          
+          // Formatı normalize et
+          if (amount.includes('.') && amount.includes(',')) {
+            // 1.234,56 -> 1234.56
+            amount = amount.replace(/\./g, '').replace(',', '.');
+          } else if (amount.includes(',')) {
+            // 123,45 -> 123.45
+            amount = amount.replace(',', '.');
+          }
+          
+          const value = parseFloat(amount);
+          
+          // Mantıklı bir KDV tutarı mı?
+          if (value > 0.01 && value < totalAmount * 0.5) {
+            console.log(`💰 KDV %${kdvRate} bulundu: ${value.toFixed(2)} TL`);
+            
+            if (kdvRate === 1) {
+              kdvData.kdv1_amounts.push(value);
+            } else if (kdvRate === 10) {
+              kdvData.kdv10_amounts.push(value);
+            } else if (kdvRate === 20) {
+              kdvData.kdv20_amounts.push(value);
+            }
+            
+            break; // Bu satırdan sadece bir değer al
+          }
+        }
+      }
+    }
+  }
+  
+  // Toplamları hesapla
+  const kdv1_total = kdvData.kdv1_amounts.reduce((sum, val) => sum + val, 0);
+  const kdv10_total = kdvData.kdv10_amounts.reduce((sum, val) => sum + val, 0);
+  const kdv20_total = kdvData.kdv20_amounts.reduce((sum, val) => sum + val, 0);
+  
+  console.log('📊 KDV Toplamları:');
+  console.log(`  - %1 KDV: ${kdv1_total.toFixed(2)} TL (${kdvData.kdv1_amounts.length} adet)`);
+  console.log(`  - %10 KDV: ${kdv10_total.toFixed(2)} TL (${kdvData.kdv10_amounts.length} adet)`);
+  console.log(`  - %20 KDV: ${kdv20_total.toFixed(2)} TL (${kdvData.kdv20_amounts.length} adet)`);
+  
+  return {
+    kdv1: kdv1_total.toFixed(2),
+    kdv10: kdv10_total.toFixed(2),
+    kdv20: kdv20_total.toFixed(2)
+  };
+}
+
 // ==========================================
 // ANA PARSE FONKSİYONU
 // ==========================================
@@ -197,14 +295,14 @@ function parseReceipt(text) {
   }
 
   // 3. FİŞ NO (BELGE NO ve İŞLEM NO öncelikli)
-const fisPatterns = [
-    /(?:BELGE\s*NO?)[:\s#\-]*([0-9\/\-]{1,20})/i,  // ← EN ÖNCELİKLİ
-    /(?:IŞLEM\s*NO?|İŞLEM\s*NO?)[:\s#\-]*([0-9\/\-]{4,20})/i,  // ← İKİNCİ
+  const fisPatterns = [
+    /(?:BELGE\s*NO?)[:\s#\-]*([0-9\/\-]{1,20})/i,
+    /(?:IŞLEM\s*NO?|İŞLEM\s*NO?)[:\s#\-]*([0-9\/\-]{4,20})/i,
     /(?:F[IİÎ][SŞ]\s*NO?|F[IİÎ][SŞ]\s*NUMARAS[IİÎ])[:\s#\-]*([0-9\/\-]{3,10})/i,
     /(?:MAKBUZ\s*NO?)[:\s#\-]*([0-9\/\-]{3,10})/i,
     /(?:Z\s*NO?|Z\s*RAPOR)[:\s#\-]*([0-9\/\-]{3,10})/i,
     /(?:SIRA\s*NO?)[:\s#\-]*([0-9\/\-]{3,10})/i
-];
+  ];
 
   for (const pattern of fisPatterns) {
     const match = fullContent.match(pattern);
@@ -222,12 +320,10 @@ const fisPatterns = [
     ];
     
     for (const line of searchRange) {
-      // MERNİS, VKN, TCKN içerenleri atla
       if (/MERNİS|MERNIS|VKN|TCKN|TC\s*KİMLİK|VERGİ|DAIRE/i.test(line)) {
         continue;
       }
       
-      // Fuzzy match ile "FİŞ" kelimesi geçiyorsa
       if (fuzzyMatch(line, 'FIS', 2) || fuzzyMatch(line, 'BELGE', 2)) {
         const numMatch = line.match(/([0-9\/\-]{3,10})/);
         if (numMatch) {
@@ -239,102 +335,59 @@ const fisPatterns = [
   }
 
   // 3c. Son çare: İlk 10 satırda, kısıtlamalarla sayı ara
-if (!data.fisNo) {
-  for (let i = 0; i < Math.min(10, lines.length); i++) {
+  if (!data.fisNo) {
+    for (let i = 0; i < Math.min(10, lines.length); i++) {
+      const line = lines[i];
+      
+      if (/TL|₺|,\d{2}/.test(line)) continue;
+      if (/MERNİS|MERNIS|VKN|TCKN|TC\s*KİMLİK|VERGİ|DAIRE|TEL|TELEFON/i.test(line)) continue;
+      if (/^0\d{3}\s*\d{3}/i.test(line)) continue;
+      
+      const match = line.match(/\b(\d{4,8})\b/);
+      if (match) {
+        const num = match[1];
+        if (!num.startsWith('02') && !num.startsWith('03')) {
+          data.fisNo = normalizeForDigits(num);
+          break;
+        }
+      }
+    }
+  }
+
+  // 4. TOPLAM TUTAR (İNDİRİM FARKINDALIKLI)
+  let foundTotal = false;
+  let hasDiscount = false;
+
+  // Önce indirim var mı kontrol et
+  for (const line of lines) {
+    const negativeMatch = line.match(/\*?\-(\d{1,3}(?:[,\.]\d{3})*[,\.]\d{2})/);
+    if (negativeMatch) {
+      hasDiscount = true;
+      console.log('⚠️ İndirim tutarı bulundu');
+      break;
+    }
+  }
+
+  // "TOPLAM" kelimesini ara
+  for (let i = 0; i < lines.length; i++) {
+    if (foundTotal) break;
+    
     const line = lines[i];
+    const lineUpper = line.toUpperCase().trim();
     
-    // Ürün/fiyat satırlarını atla
-    if (/TL|₺|,\d{2}/.test(line)) continue;
-    
-    // MERNİS, VKN, telefon numarası atla
-    if (/MERNİS|MERNIS|VKN|TCKN|TC\s*KİMLİK|VERGİ|DAIRE|TEL|TELEFON/i.test(line)) continue;
-    
-    // Alan kodu (0xxx) ile başlayan telefon numaralarını atla
-    if (/^0\d{3}\s*\d{3}/i.test(line)) continue;
-    
-    // 4-8 haneli sayı bul (10+ haneliler VKN/Mersis olabilir)
-    const match = line.match(/\b(\d{4,8})\b/);
-    if (match) {
-      const num = match[1];
-      // Telefon alan kodlarını atla (0212, 0232 vs.)
-      if (!num.startsWith('02') && !num.startsWith('03')) {
-        data.fisNo = normalizeForDigits(num);
-        break;
-      }
-    }
-  }
-}
-// 4. TOPLAM TUTAR (İNDİRİM FARKINDALIKLI)
-let foundTotal = false;
-let hasDiscount = false;
-
-// Önce indirim var mı kontrol et
-for (const line of lines) {
-  const negativeMatch = line.match(/\*?\-(\d{1,3}(?:[,\.]\d{3})*[,\.]\d{2})/);
-  if (negativeMatch) {
-    hasDiscount = true;
-    console.log('⚠️ İndirim tutarı bulundu');
-    break;
-  }
-}
-
-// "TOPLAM" kelimesini ara
-for (let i = 0; i < lines.length; i++) {
-  if (foundTotal) break;
-  
-  const line = lines[i];
-  const lineUpper = line.toUpperCase().trim();
-  
-  if (lineUpper === 'TOPLAM' || 
-      (lineUpper.startsWith('TOPLAM') && 
-       !lineUpper.includes('KDV') && 
-       !lineUpper.includes('ÜRÜN') && 
-       !lineUpper.includes('TARİH') &&
-       !lineUpper.includes('TARIH'))) {
-    
-    console.log('🔍 TOPLAM satırı bulundu:', line);
-    
-    // Aynı satırda sayı var mı?
-    const sameLineMatch = line.match(/\*?(\d{1,3}(?:[,\.\/]\d{3})*[,\.\/]\d{2})/);
-    if (sameLineMatch) {
-      let amount = sameLineMatch[1].replace(/\//g, ',');
+    if (lineUpper === 'TOPLAM' || 
+        (lineUpper.startsWith('TOPLAM') && 
+         !lineUpper.includes('KDV') && 
+         !lineUpper.includes('ÜRÜN') && 
+         !lineUpper.includes('TARİH') &&
+         !lineUpper.includes('TARIH'))) {
       
-      if (amount.includes('.') && amount.includes(',')) {
-        amount = amount.replace(/\./g, '').replace(',', '.');
-      } else if (amount.includes(',')) {
-        amount = amount.replace(',', '.');
-      }
+      console.log('🔍 TOPLAM satırı bulundu:', line);
       
-      const value = parseFloat(amount);
-      
-      if (!hasDiscount || value < 20000) {
-        data.toplamTutar = value.toFixed(2);
-        foundTotal = true;
-        console.log('💰 TOPLAM aynı satırda:', data.toplamTutar);
-        break;
-      }
-    }
-    
-    // Sonraki satırlara bak
-    for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
-      const nextLine = lines[j];
-      const nextUpper = nextLine.toUpperCase();
-      
-      // Filtreleme
-      if (nextUpper.includes('TARİH') || nextUpper.includes('TARIH') ||
-          nextUpper.includes('KDV') || nextLine.includes('%') || 
-          nextUpper.includes('İNDİRİM') || nextUpper.includes('ÜRÜN') ||
-          nextUpper.includes('NAKİT') || nextUpper.includes('NAKIT') ||
-          nextUpper.includes('PARA') || nextUpper.includes('ÜSTÜ') ||
-          nextUpper.includes('KREDİ') || nextUpper.includes('KART') ||
-          nextLine.includes('-')) {
-        console.log('⏭️ Atlanan satır:', nextLine);
-        continue;
-      }
-      
-      const nextMatch = nextLine.match(/\*?(\d{1,3}(?:[,\.\/]\d{3})*[,\.\/]\d{2})/);
-      if (nextMatch) {
-        let amount = nextMatch[1].replace(/\//g, ',');
+      // Aynı satırda sayı var mı?
+      const sameLineMatch = line.match(/\*?(\d{1,3}(?:[,\.\/]\d{3})*[,\.\/]\d{2})/);
+      if (sameLineMatch) {
+        let amount = sameLineMatch[1].replace(/\//g, ',');
         
         if (amount.includes('.') && amount.includes(',')) {
           amount = amount.replace(/\./g, '').replace(',', '.');
@@ -344,74 +397,99 @@ for (let i = 0; i < lines.length; i++) {
         
         const value = parseFloat(amount);
         
-        if (value > 10 && value < 100000) {
+        if (!hasDiscount || value < 20000) {
           data.toplamTutar = value.toFixed(2);
           foundTotal = true;
-          console.log('💰 TOPLAM sonraki satırda:', data.toplamTutar);
+          console.log('💰 TOPLAM aynı satırda:', data.toplamTutar);
           break;
         }
       }
+      
+      // Sonraki satırlara bak
+      for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
+        const nextLine = lines[j];
+        const nextUpper = nextLine.toUpperCase();
+        
+        if (nextUpper.includes('TARİH') || nextUpper.includes('TARIH') ||
+            nextUpper.includes('KDV') || nextLine.includes('%') || 
+            nextUpper.includes('İNDİRİM') || nextUpper.includes('ÜRÜN') ||
+            nextUpper.includes('NAKİT') || nextUpper.includes('NAKIT') ||
+            nextUpper.includes('PARA') || nextUpper.includes('ÜSTÜ') ||
+            nextUpper.includes('KREDİ') || nextUpper.includes('KART') ||
+            nextLine.includes('-')) {
+          console.log('⏭️ Atlanan satır:', nextLine);
+          continue;
+        }
+        
+        const nextMatch = nextLine.match(/\*?(\d{1,3}(?:[,\.\/]\d{3})*[,\.\/]\d{2})/);
+        if (nextMatch) {
+          let amount = nextMatch[1].replace(/\//g, ',');
+          
+          if (amount.includes('.') && amount.includes(',')) {
+            amount = amount.replace(/\./g, '').replace(',', '.');
+          } else if (amount.includes(',')) {
+            amount = amount.replace(',', '.');
+          }
+          
+          const value = parseFloat(amount);
+          
+          if (value > 10 && value < 100000) {
+            data.toplamTutar = value.toFixed(2);
+            foundTotal = true;
+            console.log('💰 TOPLAM sonraki satırda:', data.toplamTutar);
+            break;
+          }
+        }
+      }
+      
+      if (foundTotal) break;
     }
-    
-    if (foundTotal) break;
   }
-}
 
-// Hala bulunamadıysa en büyük tutarı al
-if (!foundTotal) {
-  let amounts = [];
-  for (const line of lines) {
-    if (line.toUpperCase().includes('KDV') || line.includes('%')) continue;
+  // Hala bulunamadıysa en büyük tutarı al
+  if (!foundTotal) {
+    let amounts = [];
+    for (const line of lines) {
+      if (line.toUpperCase().includes('KDV') || line.includes('%')) continue;
+      
+      const matches = line.match(/\*?(\d{1,3}(?:[,\.]\d{3})*[,\.]\d{2})/g);
+      if (matches) {
+        matches.forEach(m => {
+          let amount = m.replace(/[\*\.]/g, '').replace(',', '.');
+          const value = parseFloat(amount);
+          if (value > 10 && value < 50000) amounts.push(value);
+        });
+      }
+    }
     
-    const matches = line.match(/\*?(\d{1,3}(?:[,\.]\d{3})*[,\.]\d{2})/g);
-    if (matches) {
-      matches.forEach(m => {
-        let amount = m.replace(/[\*\.]/g, '').replace(',', '.');
-        const value = parseFloat(amount);
-        if (value > 10 && value < 50000) amounts.push(value);
-      });
+    if (amounts.length > 0) {
+      if (hasDiscount) {
+        amounts = amounts.filter(a => a < 15000);
+      }
+      amounts.sort((a, b) => b - a);
+      data.toplamTutar = amounts[0].toFixed(2);
+      console.log('💰 Seçilen tutar:', data.toplamTutar);
     }
   }
-  
-  if (amounts.length > 0) {
-    if (hasDiscount) {
-      amounts = amounts.filter(a => a < 15000);
-    }
-    amounts.sort((a, b) => b - a);
-    data.toplamTutar = amounts[0].toFixed(2);
-    console.log('💰 Seçilen tutar:', data.toplamTutar);
-  }
-}
-  // 5. KDV HESAPLAMA
+
+  // 5. KDV HESAPLAMA - YENİ GELİŞTİRİLMİŞ METOD
   if (data.toplamTutar) {
     const total = parseFloat(data.toplamTutar);
     
-    // Metinde KDV kelimesi ara
-    let kdvFound = false;
-    for (const line of lines) {
-      if (/KDV|KDVLI|K\.D\.V/i.test(line)) {
-        const kdvMatch = line.match(/(\d+[,\.]\d{2})/);
-        if (kdvMatch) {
-          const kdvAmount = parseFloat(kdvMatch[1].replace(',', '.'));
-          
-          // KDV oranını tahmin et
-          const ratio = (kdvAmount / total) * 100;
-          if (ratio > 15 && ratio < 25) {
-            data.kdv20 = kdvAmount.toFixed(2);
-          } else if (ratio > 8 && ratio < 12) {
-            data.kdv10 = kdvAmount.toFixed(2);
-          } else if (ratio > 0.5 && ratio < 2) {
-            data.kdv1 = kdvAmount.toFixed(2);
-          }
-          kdvFound = true;
-          break;
-        }
-      }
-    }
+    // Yeni: Tüm KDV'leri topla
+    const kdvResults = extractAllKDV(lines, total);
     
-    // KDV bulunamadıysa akıllı tahmin
-    if (!kdvFound) {
-      // Metinde KDV oranı geçiyor mu? (%1, %10, %20)
+    data.kdv1 = kdvResults.kdv1;
+    data.kdv10 = kdvResults.kdv10;
+    data.kdv20 = kdvResults.kdv20;
+    
+    // Eğer hiç KDV bulunamadıysa akıllı tahmin yap
+    const totalKDV = parseFloat(kdvResults.kdv1) + parseFloat(kdvResults.kdv10) + parseFloat(kdvResults.kdv20);
+    
+    if (totalKDV === 0) {
+      console.log('⚠️ KDV bulunamadı, akıllı tahmin yapılıyor...');
+      
+      // Metinde KDV oranı geçiyor mu?
       let kdvRate = 20; // Default
       
       if (/%10|YÜZDE\s*10|KDV\s*10/i.test(fullContent)) {
@@ -420,41 +498,9 @@ if (!foundTotal) {
         kdvRate = 1;
       } else if (/%20|YÜZDE\s*20|KDV\s*20/i.test(fullContent)) {
         kdvRate = 20;
-      } else {
-        // Oran belirtilmemişse toplam tutardan tahmin et
-        // Türkiye'de yaygın KDV oranları: %1, %10, %20
-        // En küçük farkı veren oranı seç
-        const estimations = [
-          { rate: 1, kdv: total - (total / 1.01) },
-          { rate: 10, kdv: total - (total / 1.10) },
-          { rate: 20, kdv: total - (total / 1.20) }
-        ];
-        
-        // KDV tutarları metinde aranabilir - en yakın olanı bul
-        let bestMatch = estimations[2]; // Default %20
-        let minDiff = Infinity;
-        
-        for (const est of estimations) {
-          // Metinde bu KDV tutarına yakın bir sayı var mı?
-          for (const line of lines) {
-            const amounts = line.match(/(\d+[,\.]\d{2})/g);
-            if (amounts) {
-              amounts.forEach(amt => {
-                const amount = parseFloat(amt.replace(',', '.'));
-                const diff = Math.abs(amount - est.kdv);
-                if (diff < minDiff && diff < est.kdv * 0.1) { // %10 tolerans
-                  minDiff = diff;
-                  bestMatch = est;
-                }
-              });
-            }
-          }
-        }
-        
-        kdvRate = bestMatch.rate;
       }
       
-      // KDV'yi doğru alana yaz
+      // KDV'yi hesapla
       const kdvAmount = total - (total / (1 + kdvRate / 100));
       
       if (kdvRate === 1) {
@@ -465,17 +511,16 @@ if (!foundTotal) {
         data.kdv20 = kdvAmount.toFixed(2);
       }
       
-      console.log(`📊 Tespit edilen KDV oranı: %${kdvRate}`);
+      console.log(`📊 Tahmin edilen KDV oranı: %${kdvRate} = ${kdvAmount.toFixed(2)} TL`);
     }
   }
 
-  
-// 6. GİDER CİNSİ BELİRLE (ANAHTAR KELİME SİSTEMİ)
-data.giderCinsi = determineExpenseCategory(text);
+  // 6. GİDER CİNSİ BELİRLE
+  data.giderCinsi = determineExpenseCategory(text);
 
-console.log('✅ Parse sonucu:', data);
+  console.log('✅ Parse sonucu:', data);
 
-return data;
+  return data;
 }
 
 module.exports = { parseReceipt };
