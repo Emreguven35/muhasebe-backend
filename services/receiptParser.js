@@ -175,13 +175,13 @@ function extractAllKDV(lines, totalAmount) {
     // KDV oranını tespit et
     let kdvRate = null;
     
-    if (/%1[^0]|YÜZDE\s*1[^0]|KDV\s*%?\s*1[^0]|\(%1\)/i.test(lineUpper)) {
-      kdvRate = 1;
-    } else if (/%10|YÜZDE\s*10|KDV\s*%?\s*10|\(%10\)/i.test(lineUpper)) {
-      kdvRate = 10;
-    } else if (/%20|YÜZDE\s*20|KDV\s*%?\s*20|\(%20\)/i.test(lineUpper)) {
-      kdvRate = 20;
-    }
+    if (/%1[^0]|YÜZDE\s*1[^0]|KDV\s*%?\s*1[^0]|\(%1\)|21\./i.test(lineUpper)) {
+  kdvRate = 1;
+} else if (/%10|YÜZDE\s*10|KDV\s*%?\s*10|\(%10\)/i.test(lineUpper)) {
+  kdvRate = 10;
+} else if (/%20|YÜZDE\s*20|KDV\s*%?\s*20|\(%20\)|%20\s|POŞET/i.test(lineUpper)) {
+  kdvRate = 20;
+}
     
     if (!kdvRate) {
       console.log('⚠️ KDV oranı tespit edilemedi, satırı atla');
@@ -358,13 +358,15 @@ function parseReceipt(text) {
   let foundTotal = false;
   let hasDiscount = false;
 
-  // Önce indirim var mı kontrol et
+ // Önce indirim var mı kontrol et
 for (const line of lines) {
   const lineUpper = line.toUpperCase();
   
-  // KREDİ KARTI, NAKİT gibi ödeme şekillerini atla
+  // Ödeme şekillerini ve "Ödenecek" satırlarını atla
   if (lineUpper.includes('KREDİ') || lineUpper.includes('KART') || 
-      lineUpper.includes('NAKİT') || lineUpper.includes('NAKIT')) {
+      lineUpper.includes('NAKİT') || lineUpper.includes('NAKIT') ||
+      lineUpper.includes('BANKA') || lineUpper.includes('ÖDENECEK') ||
+      lineUpper.includes('ODENECEK')) {
     continue;
   }
   
@@ -454,31 +456,31 @@ for (const line of lines) {
     }
   }
 
-  // Hala bulunamadıysa en büyük tutarı al
-  if (!foundTotal) {
-    let amounts = [];
-    for (const line of lines) {
-      if (line.toUpperCase().includes('KDV') || line.includes('%')) continue;
-      
-      const matches = line.match(/\*?(\d{1,3}(?:[,\.]\d{3})*[,\.]\d{2})/g);
-      if (matches) {
-        matches.forEach(m => {
-          let amount = m.replace(/[\*\.]/g, '').replace(',', '.');
-          const value = parseFloat(amount);
-          if (value > 10 && value < 50000) amounts.push(value);
-        });
-      }
-    }
+  // Hala bulunamadıysa en büyük makul tutarı al
+if (!foundTotal) {
+  let amounts = [];
+  for (const line of lines) {
+    if (line.toUpperCase().includes('KDV') || line.includes('%')) continue;
     
-    if (amounts.length > 0) {
-      if (hasDiscount) {
-        amounts = amounts.filter(a => a < 15000);
-      }
-      amounts.sort((a, b) => b - a);
-      data.toplamTutar = amounts[0].toFixed(2);
-      console.log('💰 Seçilen tutar:', data.toplamTutar);
+    const matches = line.match(/\*?(\d{1,3}(?:[,\.]\d{3})*[,\.]\d{2})/g);
+    if (matches) {
+      matches.forEach(m => {
+        let amount = m.replace(/[\*\.]/g, '').replace(',', '.');
+        const value = parseFloat(amount);
+        if (value > 10 && value < 10000) amounts.push(value);  // ← 10000'e düşür
+      });
     }
   }
+  
+  if (amounts.length > 0) {
+    if (hasDiscount) {
+      amounts = amounts.filter(a => a < 5000);  // ← 5000'e düşür
+    }
+    amounts.sort((a, b) => b - a);
+    data.toplamTutar = amounts[0].toFixed(2);
+    console.log('💰 Seçilen tutar:', data.toplamTutar, 'Liste:', amounts.slice(0, 5));
+  }
+}
 
   // 5. KDV HESAPLAMA - YENİ GELİŞTİRİLMİŞ METOD
   if (data.toplamTutar) {
