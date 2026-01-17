@@ -409,12 +409,18 @@ for (const line of lines) {
     break;
   }
 }
-// "TOPLAM" veya "Ödenecek" kelimesini ara
+// "TOPLAM" kelimesini ara (TOPKDV hariç)
 for (let i = 0; i < lines.length; i++) {
   if (foundTotal) break;
   
   const line = lines[i];
   const lineUpper = line.toUpperCase().trim();
+  
+  // TOPKDV, TOPLAM KDV gibi satırları atla
+  if (lineUpper.includes('TOPKDV') || lineUpper.includes('TOPLAM') && lineUpper.includes('KDV')) {
+    console.log('⏭️ TOPKDV atlandı:', line);
+    continue;
+  }
   
   if (lineUpper === 'TOPLAM' || 
       (lineUpper.startsWith('TOPLAM') && 
@@ -423,8 +429,8 @@ for (let i = 0; i < lines.length; i++) {
        !lineUpper.includes('TARİH') &&
        !lineUpper.includes('TARIH')) ||
       lineUpper.includes('ODENECEK') && lineUpper.includes('DAHIL')) {
-      
-      console.log('🔍 TOPLAM satırı bulundu:', line);
+    
+    console.log('🔍 TOPLAM satırı bulundu:', line);
       
       // Aynı satırda sayı var mı?
       const sameLineMatch = line.match(/\*?(\d{1,3}(?:[,\.\/]\d{3})*[,\.\/]\d{2})/);
@@ -489,50 +495,56 @@ for (let i = 0; i < lines.length; i++) {
   }
 // Hala bulunamadıysa, NAKİT - PARA ÜSTÜ hesabı dene
 if (!foundTotal) {
-  let nakitAmount = null;
-  let paraUstuAmount = null;
+  // Önce NAKİT - PARA ÜSTÜ dene
+let nakitAmount = null;
+let paraUstuAmount = null;
+
+for (const line of lines) {
+  const lineUpper = line.toUpperCase();
   
-  for (const line of lines) {
-    const lineUpper = line.toUpperCase();
-    
-    // NAKİT tutarını bul
-    if ((lineUpper.includes('NAKİT') || lineUpper.includes('NAKIT')) && 
-        !lineUpper.includes('PARA') && !lineUpper.includes('ÜSTÜ')) {
-      const match = line.match(/(\d{1,3}(?:[,\.]\d{3})*[,\.]\d{2})/);
-      if (match) {
-        let amount = match[1].replace(/\//g, ',');
-        if (amount.includes('.') && amount.includes(',')) {
-          amount = amount.replace(/\./g, '').replace(',', '.');
-        } else if (amount.includes(',')) {
-          amount = amount.replace(',', '.');
-        }
-        nakitAmount = parseFloat(amount);
-        console.log('💵 NAKİT bulundu:', nakitAmount);
+  if ((lineUpper.includes('NAKİT') || lineUpper.includes('NAKIT')) && 
+      !lineUpper.includes('PARA') && !lineUpper.includes('ÜSTÜ')) {
+    const match = line.match(/(\d{1,3}(?:[,\.]\d{3})*[,\.]\d{2})/);
+    if (match) {
+      let amount = match[1].replace(/\//g, ',');
+      if (amount.includes('.') && amount.includes(',')) {
+        amount = amount.replace(/\./g, '').replace(',', '.');
+      } else if (amount.includes(',')) {
+        amount = amount.replace(',', '.');
       }
-    }
-    
-    // PARA ÜSTÜ tutarını bul
-    if (lineUpper.includes('PARA') && (lineUpper.includes('ÜSTÜ') || lineUpper.includes('USTU'))) {
-      const match = line.match(/(\d{1,3}(?:[,\.]\d{3})*[,\.]\d{2})/);
-      if (match) {
-        let amount = match[1].replace(/\//g, ',');
-        if (amount.includes('.') && amount.includes(',')) {
-          amount = amount.replace(/\./g, '').replace(',', '.');
-        } else if (amount.includes(',')) {
-          amount = amount.replace(',', '.');
-        }
-        paraUstuAmount = parseFloat(amount);
-        console.log('💰 PARA ÜSTÜ bulundu:', paraUstuAmount);
-      }
+      nakitAmount = parseFloat(amount);
+      console.log('💵 NAKİT bulundu:', nakitAmount);
     }
   }
   
-  // NAKİT ve PARA ÜSTÜ varsa hesapla
-  if (nakitAmount && paraUstuAmount) {
-    data.toplamTutar = (nakitAmount - paraUstuAmount).toFixed(2);
-    foundTotal = true;
-    console.log('✅ NAKİT - PARA ÜSTÜ = TOPLAM:', data.toplamTutar);
+  if (lineUpper.includes('PARA') && (lineUpper.includes('ÜSTÜ') || lineUpper.includes('USTU'))) {
+    const match = line.match(/(\d{1,3}(?:[,\.]\d{3})*[,\.]\d{2})/);
+    if (match) {
+      let amount = match[1].replace(/\//g, ',');
+      if (amount.includes('.') && amount.includes(',')) {
+        amount = amount.replace(/\./g, '').replace(',', '.');
+      } else if (amount.includes(',')) {
+        amount = amount.replace(',', '.');
+      }
+      paraUstuAmount = parseFloat(amount);
+      console.log('💰 PARA ÜSTÜ bulundu:', paraUstuAmount);
+    }
   }
+}
+
+// NAKİT ve PARA ÜSTÜ varsa hesapla
+if (nakitAmount && paraUstuAmount) {
+  data.toplamTutar = (nakitAmount - paraUstuAmount).toFixed(2);
+  foundTotal = true;
+  console.log('✅ NAKİT - PARA ÜSTÜ = TOPLAM:', data.toplamTutar);
+}
+
+// Bulunamadıysa "TOPLAM" kelimesini ara
+if (!foundTotal) {
+  for (let i = 0; i < lines.length; i++) {
+    // ... mevcut TOPLAM arama kodu
+  }
+}
 }
  // Hala bulunamadıysa en büyük makul tutarı al
 if (!foundTotal) {
