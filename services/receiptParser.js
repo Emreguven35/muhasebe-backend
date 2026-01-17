@@ -420,20 +420,27 @@ for (let i = 0; i < lines.length; i++) {
   // NAKİT satırını bul
   if ((lineUpper === 'NAKİT' || lineUpper === 'NAKIT') && !lineUpper.includes('PARA') && !lineUpper.includes('ÜSTÜ')) {
     
-    // Sonraki 3 satırda tutarı ara
-    for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
+    // Sonraki satırlarda en büyük tutarı bul (NAKİT genelde en büyüktür)
+    let maxAmount = 0;
+    for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
       const nextLine = lines[j];
       
-      // TOPKDV, TOPLAM atla
-      if (nextLine.toUpperCase().includes('TOP')) continue;
+      // PARA ÜSTÜ'ye geldiysek dur
+      if (nextLine.toUpperCase().includes('PARA') || nextLine.toUpperCase().includes('ÜSTÜ')) break;
       
       const match = nextLine.match(/\*?(\d{1,3}(?:[,\.]\d{3})*[,\.]\d{2})/);
       if (match) {
         let amount = match[1].replace(',', '.');
-        nakitAmount = parseFloat(amount);
-        console.log('💵 NAKİT bulundu:', nakitAmount);
-        break;
+        const value = parseFloat(amount);
+        if (value > maxAmount) {
+          maxAmount = value;
+        }
       }
+    }
+    
+    if (maxAmount > 0) {
+      nakitAmount = maxAmount;
+      console.log('💵 NAKİT bulundu (en büyük tutar):', nakitAmount);
     }
   }
   
@@ -458,7 +465,8 @@ for (let i = 0; i < lines.length; i++) {
   }
 }
 
-if (nakitAmount && paraUstuAmount) {
+// NAKİT ve PARA ÜSTÜ varsa ve NAKİT > PARA ÜSTÜ ise hesapla
+if (nakitAmount && paraUstuAmount && nakitAmount > paraUstuAmount) {
   data.toplamTutar = (nakitAmount - paraUstuAmount).toFixed(2);
   foundTotal = true;
   console.log('✅ NAKİT - PARA ÜSTÜ = TOPLAM:', data.toplamTutar);
