@@ -413,39 +413,47 @@ for (const line of lines) {
 let nakitAmount = null;
 let paraUstuAmount = null;
 
-for (const line of lines) {
-  const lineUpper = line.toUpperCase();
+for (let i = 0; i < lines.length; i++) {
+  const line = lines[i];
+  const lineUpper = line.toUpperCase().trim();
   
-  if ((lineUpper === 'NAKİT' || lineUpper === 'NAKIT' || lineUpper.startsWith('NAKİT') || lineUpper.startsWith('NAKIT')) && 
-      !lineUpper.includes('PARA') && !lineUpper.includes('ÜSTÜ')) {
+  // NAKİT satırını bul
+  if ((lineUpper === 'NAKİT' || lineUpper === 'NAKIT') && !lineUpper.includes('PARA') && !lineUpper.includes('ÜSTÜ')) {
     
-    // Aynı satırda
-    const sameLine = line.match(/(\d{1,3}(?:[,\.]\d{3})*[,\.]\d{2})/);
-    if (sameLine) {
-      let amount = sameLine[1].replace(',', '.');
-      nakitAmount = parseFloat(amount);
-      console.log('💵 NAKİT bulundu (aynı satır):', nakitAmount);
-    } else {
-      // Sonraki satırda
-      const lineIndex = lines.indexOf(line);
-      if (lineIndex < lines.length - 1) {
-        const nextLine = lines[lineIndex + 1];
-        const nextMatch = nextLine.match(/(\d{1,3}(?:[,\.]\d{3})*[,\.]\d{2})/);
-        if (nextMatch) {
-          let amount = nextMatch[1].replace(',', '.');
-          nakitAmount = parseFloat(amount);
-          console.log('💵 NAKİT bulundu (sonraki satır):', nakitAmount);
-        }
+    // Sonraki 3 satırda tutarı ara
+    for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
+      const nextLine = lines[j];
+      
+      // TOPKDV, TOPLAM atla
+      if (nextLine.toUpperCase().includes('TOP')) continue;
+      
+      const match = nextLine.match(/\*?(\d{1,3}(?:[,\.]\d{3})*[,\.]\d{2})/);
+      if (match) {
+        let amount = match[1].replace(',', '.');
+        nakitAmount = parseFloat(amount);
+        console.log('💵 NAKİT bulundu:', nakitAmount);
+        break;
       }
     }
   }
   
+  // PARA ÜSTÜ satırını bul
   if (lineUpper.includes('PARA') && (lineUpper.includes('ÜSTÜ') || lineUpper.includes('USTU'))) {
-    const match = line.match(/(\d{1,3}(?:[,\.]\d{3})*[,\.]\d{2})/);
+    
+    // Aynı veya sonraki satırda
+    const match = line.match(/\*?(\d{1,3}(?:[,\.]\d{3})*[,\.]\d{2})/);
     if (match) {
       let amount = match[1].replace(',', '.');
       paraUstuAmount = parseFloat(amount);
       console.log('💰 PARA ÜSTÜ bulundu:', paraUstuAmount);
+    } else if (i < lines.length - 1) {
+      const nextLine = lines[i + 1];
+      const nextMatch = nextLine.match(/\*?(\d{1,3}(?:[,\.]\d{3})*[,\.]\d{2})/);
+      if (nextMatch) {
+        let amount = nextMatch[1].replace(',', '.');
+        paraUstuAmount = parseFloat(amount);
+        console.log('💰 PARA ÜSTÜ bulundu:', paraUstuAmount);
+      }
     }
   }
 }
@@ -455,7 +463,6 @@ if (nakitAmount && paraUstuAmount) {
   foundTotal = true;
   console.log('✅ NAKİT - PARA ÜSTÜ = TOPLAM:', data.toplamTutar);
 }
-
 // ÖNCELİK 2: TOPLAM kelimesi
 if (!foundTotal) {
   for (let i = 0; i < lines.length; i++) {
