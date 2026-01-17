@@ -359,14 +359,22 @@ function parseReceipt(text) {
   let hasDiscount = false;
 
   // Önce indirim var mı kontrol et
-  for (const line of lines) {
-    const negativeMatch = line.match(/\*?\-(\d{1,3}(?:[,\.]\d{3})*[,\.]\d{2})/);
-    if (negativeMatch) {
-      hasDiscount = true;
-      console.log('⚠️ İndirim tutarı bulundu');
-      break;
-    }
+for (const line of lines) {
+  const lineUpper = line.toUpperCase();
+  
+  // KREDİ KARTI, NAKİT gibi ödeme şekillerini atla
+  if (lineUpper.includes('KREDİ') || lineUpper.includes('KART') || 
+      lineUpper.includes('NAKİT') || lineUpper.includes('NAKIT')) {
+    continue;
   }
+  
+  const negativeMatch = line.match(/\*?\-(\d{1,3}(?:[,\.]\d{3})*[,\.]\d{2})/);
+  if (negativeMatch) {
+    hasDiscount = true;
+    console.log('⚠️ İndirim tutarı bulundu');
+    break;
+  }
+}
 
   // "TOPLAM" kelimesini ara
   for (let i = 0; i < lines.length; i++) {
