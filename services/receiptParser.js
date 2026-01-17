@@ -167,21 +167,21 @@ function extractAllKDV(lines, totalAmount) {
     const line = lines[i];
     const lineUpper = line.toUpperCase();
     
-    // KDV içeren satırları bul
-    if (!/KDV|K\.D\.V/i.test(line)) continue;
+    // KDV içeren satırları veya %1, %10, %20 içeren satırları bul
+    if (!/KDV|K\.D\.V|%1|%10|%20|21\.|210/i.test(line)) continue;
     
     console.log('🔍 KDV satırı:', line);
     
     // KDV oranını tespit et
     let kdvRate = null;
     
-    if (/%1[^0]|YÜZDE\s*1[^0]|KDV\s*%?\s*1[^0]|\(%1\)|21\./i.test(lineUpper)) {
-  kdvRate = 1;
-} else if (/%10|YÜZDE\s*10|KDV\s*%?\s*10|\(%10\)/i.test(lineUpper)) {
-  kdvRate = 10;
-} else if (/%20|YÜZDE\s*20|KDV\s*%?\s*20|\(%20\)|%20\s|POŞET/i.test(lineUpper)) {
-  kdvRate = 20;
-}
+    if (/%1[^0]|YÜZDE\s*1[^0]|21\.|210/i.test(lineUpper)) {
+      kdvRate = 1;
+    } else if (/%10|YÜZDE\s*10/i.test(lineUpper)) {
+      kdvRate = 10;
+    } else if (/%20|YÜZDE\s*20|POŞET/i.test(lineUpper)) {
+      kdvRate = 20;
+    }
     
     if (!kdvRate) {
       console.log('⚠️ KDV oranı tespit edilemedi, satırı atla');
@@ -192,37 +192,40 @@ function extractAllKDV(lines, totalAmount) {
     const searchLines = [line, ...lines.slice(i + 1, i + 3)];
     
     for (const searchLine of searchLines) {
-      // Para formatında değer bul (123,45 veya 1.234,56)
-      const amountMatches = searchLine.match(/(\d{1,3}(?:[,\.]\d{3})*[,\.]\d{2})/g);
+      const amountMatches = searchLine.match(/\*?(\d{1,3}(?:[,\.]\d{3})*[,\.]\d{2})/g);
       
       if (amountMatches) {
         for (const match of amountMatches) {
-          let amount = match;
+          let amount = match.replace(/[\*]/g, '');
+          
+          // Slash'ı virgüle çevir
+          amount = amount.replace(/\//g, ',');
           
           // Formatı normalize et
           if (amount.includes('.') && amount.includes(',')) {
-            // 1.234,56 -> 1234.56
             amount = amount.replace(/\./g, '').replace(',', '.');
           } else if (amount.includes(',')) {
-            // 123,45 -> 123.45
             amount = amount.replace(',', '.');
           }
           
           const value = parseFloat(amount);
           
-          // Mantıklı bir KDV tutarı mı?
-          if (value > 0.01 && value < totalAmount * 0.5) {
-            console.log(`💰 KDV %${kdvRate} bulundu: ${value.toFixed(2)} TL`);
+          // Mantıklı bir KDV/ürün tutarı mı?
+          if (value > 0.01 && value < totalAmount) {
+            console.log(`💰 KDV %${kdvRate} için tutar bulundu: ${value.toFixed(2)} TL`);
+            
+            // Ürün tutarından KDV hesapla
+            const kdvAmount = value - (value / (1 + kdvRate / 100));
             
             if (kdvRate === 1) {
-              kdvData.kdv1_amounts.push(value);
+              kdvData.kdv1_amounts.push(kdvAmount);
             } else if (kdvRate === 10) {
-              kdvData.kdv10_amounts.push(value);
+              kdvData.kdv10_amounts.push(kdvAmount);
             } else if (kdvRate === 20) {
-              kdvData.kdv20_amounts.push(value);
+              kdvData.kdv20_amounts.push(kdvAmount);
             }
             
-            break; // Bu satırdan sadece bir değer al
+            break;
           }
         }
       }
@@ -456,7 +459,7 @@ for (const line of lines) {
     }
   }
 
-  // Hala bulunamadıysa en büyük makul tutarı al
+ // Hala bulunamadıysa en büyük makul tutarı al
 if (!foundTotal) {
   let amounts = [];
   for (const line of lines) {
@@ -465,23 +468,35 @@ if (!foundTotal) {
     const matches = line.match(/\*?(\d{1,3}(?:[,\.]\d{3})*[,\.]\d{2})/g);
     if (matches) {
       matches.forEach(m => {
-        let amount = m.replace(/[\*\.]/g, '').replace(',', '.');
+        let amount = m.replace(/[\*]/g, '');
+        
+        // Slash'ı virgüle çevir
+        amount = amount.replace(/\//g, ',');
+        
+        // Akıllı normalize
+        if (amount.includes('.') && amount.includes(',')) {
+          amount = amount.replace(/\./g, '').replace(',', '.');
+        } else if (amount.includes(',')) {
+          amount = amount.replace(',', '.');
+        }
+        // Eğer sadece nokta varsa VE 2 hane sonra geliyorsa ondalık ayraç
+        // 89.00 → 89.00 KALSIN, 1.234 → 1.234 KALSIN
+        
         const value = parseFloat(amount);
-        if (value > 10 && value < 10000) amounts.push(value);  // ← 10000'e düşür
+        if (value > 10 && value < 10000) amounts.push(value);
       });
     }
   }
   
   if (amounts.length > 0) {
     if (hasDiscount) {
-      amounts = amounts.filter(a => a < 5000);  // ← 5000'e düşür
+      amounts = amounts.filter(a => a < 5000);
     }
     amounts.sort((a, b) => b - a);
     data.toplamTutar = amounts[0].toFixed(2);
     console.log('💰 Seçilen tutar:', data.toplamTutar, 'Liste:', amounts.slice(0, 5));
   }
 }
-
   // 5. KDV HESAPLAMA - YENİ GELİŞTİRİLMİŞ METOD
   if (data.toplamTutar) {
     const total = parseFloat(data.toplamTutar);
