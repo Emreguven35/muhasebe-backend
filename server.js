@@ -5,6 +5,7 @@ const fs = require('fs');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { pool } = require('./services/database');
+const zRaporRoutes = require('./routes/zrapor');
 
 dotenv.config();
 if (!fs.existsSync('uploads')) {
@@ -18,6 +19,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use('/api/zrapor', zRaporRoutes);
 
 app.get('/', (req, res) => {
   res.json({ message: 'Muhasebe OCR API çalışıyor! 🚀' });
