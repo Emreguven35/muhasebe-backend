@@ -77,8 +77,16 @@ async function detectObjects(imagePath) {
     };
   }
 }
-
+async function analyzeImage(imagePath) {
+  const result = await detectText(imagePath);
+  if (!result.success) {
+    throw new Error(result.error || 'OCR başarısız');
+  }
+  return result.fullText;
+}
 module.exports = {
   detectText,
-  detectObjects
+  detectObjects,
+  analyzeImage  // ← EKLE
+
 };
