@@ -13,7 +13,17 @@ if (!fs.existsSync('uploads')) {
   console.log('📁 uploads klasörü oluşturuldu');
 }
 
-
+// CORS ayarları - Frontend domain'ini ekle
+app.use(cors({
+  origin: [
+    'http://localhost:3000',
+    'https://muhasebe-frontend.vercel.app',
+    'https://muhasebe-frontend-git-main-emres-projects-d36e6720.vercel.app'
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 const app = express();
 
 app.use(cors());
