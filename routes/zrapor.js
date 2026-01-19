@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const { authenticateToken } = require('../middlewares/auth');
+const { authenticateToken } = require('../middleware/auth');
 const { parseZRapor } = require('../services/zRaporParser');
 const { query } = require('../services/database');
 const fs = require('fs');
