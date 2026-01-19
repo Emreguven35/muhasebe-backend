@@ -667,31 +667,37 @@ app.get('/api/dashboard-stats', async (req, res) => {
 
     const stats = await pool.query(
       `SELECT 
-        COUNT(*) as total_receipts,
+        COUNT(*)::int as total_receipts,
         COALESCE(SUM(total), 0) as total_amount,
         COALESCE(SUM(vat), 0) as total_vat,
-        COUNT(DISTINCT category) as category_count
+        COUNT(DISTINCT category)::int as category_count
        FROM receipts 
        WHERE user_id = $1`,
       [userId]
     );
 
     const categoryStats = await pool.query(
-      `SELECT category, COUNT(*) as count, COALESCE(SUM(total), 0) as total
+      `SELECT category, COUNT(*)::int as count, COALESCE(SUM(total), 0) as total
        FROM receipts 
-       WHERE user_id = $1 
+       WHERE user_id = $1 AND category IS NOT NULL
        GROUP BY category 
        ORDER BY total DESC`,
       [userId]
     );
 
     res.json({
-      ...stats.rows[0],
-      categories: categoryStats.rows
+      total_receipts: stats.rows[0].total_receipts || 0,
+      total_amount: parseFloat(stats.rows[0].total_amount || 0),
+      total_vat: parseFloat(stats.rows[0].total_vat || 0),
+      category_count: stats.rows[0].category_count || 0,
+      categories: categoryStats.rows || []
     });
   } catch (error) {
     console.error('Stats hatası:', error);
-    res.status(500).json({ error: 'İstatistikler alınırken bir hata oluştu' });
+    res.status(500).json({ 
+      error: 'İstatistikler alınırken bir hata oluştu',
+      details: error.message 
+    });
   }
 });
 
