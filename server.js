@@ -588,6 +588,50 @@ app.get('/api/z-reports', async (req, res) => {
   }
 });
 
+// Fiş güncelle
+app.put('/api/receipts/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.query.userId;
+    const {
+      company_name,
+      date,
+      receipt_number,
+      category,
+      total,
+      vat
+    } = req.body;
+
+    // Önce fişin bu kullanıcıya ait olduğunu kontrol et
+    const checkReceipt = await pool.query(
+      'SELECT * FROM receipts WHERE id = $1 AND user_id = $2',
+      [id, userId]
+    );
+
+    if (checkReceipt.rows.length === 0) {
+      return res.status(404).json({ error: 'Fiş bulunamadı' });
+    }
+
+    // Güncelle
+    const result = await pool.query(
+      `UPDATE receipts 
+       SET company_name = $1, date = $2, receipt_number = $3, category = $4, total = $5, vat = $6
+       WHERE id = $7 AND user_id = $8
+       RETURNING *`,
+      [company_name, date, receipt_number, category, total, vat, id, userId]
+    );
+
+    res.json({
+      success: true,
+      receipt: result.rows[0]
+    });
+
+  } catch (error) {
+    console.error('❌ Güncelleme hatası:', error);
+    res.status(500).json({ error: 'Fiş güncellenirken bir hata oluştu' });
+  }
+});
+
 // Fiş sil
 app.delete('/api/receipts/:id', async (req, res) => {
   try {
