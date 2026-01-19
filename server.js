@@ -13,6 +13,8 @@ if (!fs.existsSync('uploads')) {
   console.log('📁 uploads klasörü oluşturuldu');
 }
 
+
+const app = express();
 // CORS ayarları - Frontend domain'ini ekle
 app.use(cors({
   origin: [
@@ -24,7 +26,6 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
-const app = express();
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
