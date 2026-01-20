@@ -743,7 +743,7 @@ function convertTurkishToNumber(text) {
 }
 
 // ==========================================
-// KDV ÇIKARMA - GELİŞTİRİLMİŞ v3.0
+// KDV ÇIKARMA - GELİŞTİRİLMİŞ v4.0
 // ==========================================
 function extractVAT(text, total) {
   console.log('🔍 KDV aranıyor, toplam tutar:', total);
@@ -754,13 +754,10 @@ function extractVAT(text, total) {
   
   const lines = text.split('\n').map(l => l.trim()).filter(l => l);
   
-  // 1. "KDV" satırından sonraki değer (e-Fatura formatı)
-  // Örnek: KDV\n454.55 veya TOPLAM KDV\n454.55
+  // 1. "TOPLAM KDV" pattern'i - aynı satırda veya yakınında
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     
-    // "TOPLAM KDV" ile aynı satırda veya yakınında değer olabilir
-    // Format: "TOPLAM KDV                    454.55" veya "TOPLAM KDV 454.55"
     if (/TOPLAM\s*KDV/i.test(line)) {
       // Aynı satırda sayı var mı?
       const sameLineMatch = line.match(/TOPLAM\s*KDV[\s:]*([\d.,]+)/i);
@@ -772,7 +769,7 @@ function extractVAT(text, total) {
         }
       }
       
-      // Satırın sonunda sayı var mı? (boşlukla ayrılmış)
+      // Satırın sonunda sayı var mı?
       const endMatch = line.match(/([\d.,]+)\s*$/);
       if (endMatch) {
         const vat = parseNumber(endMatch[1]);
@@ -794,10 +791,14 @@ function extractVAT(text, total) {
         }
       }
     }
+  }
+
+  // 2. "KDV" kelimesi olan satır (TOPLAM KDV değil)
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     
     // Sadece "KDV" veya "TOPKDV" yazan satır
     if (/^(KDV|TOPKDV)$/i.test(line)) {
-      // Sonraki satırlarda sayı ara
       for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
         const numMatch = lines[j].match(/^[*+]?([\d.,]+)(?:\s*₺|\s*TL)?$/);
         if (numMatch) {
@@ -809,34 +810,11 @@ function extractVAT(text, total) {
         }
       }
     }
-    
-    // "KDV: 454.55" formatı (aynı satırda, TOPLAM KDV değil)
-    if (/^KDV[:\s]/i.test(line) && !/TOPLAM/i.test(line)) {
-      const kdvSameLine = line.match(/^KDV[:\s]*([\d.,]+)/i);
-      if (kdvSameLine) {
-        const vat = parseNumber(kdvSameLine[1]);
-        if (!isNaN(vat) && vat > 0 && (total === 0 || (vat < maxVat && vat > minVat))) {
-          console.log('📊 KDV bulundu (KDV: aynı satır):', vat);
-          return vat;
-        }
-      }
-    }
   }
 
-  // 2. TOPLAM KDV satırını bul
-  const toplamKdvMatch = text.match(/TOPLAM\s*KDV[:\s]*([\d.,]+)/i);
-  if (toplamKdvMatch) {
-    const vat = parseNumber(toplamKdvMatch[1]);
-    if (!isNaN(vat) && vat > 0) {
-      console.log('📊 KDV bulundu (TOPLAM KDV):', vat);
-      return vat;
-    }
-  }
-
-  // 3. TOPKDV satırını bul ve değerini al
+  // 3. TOPKDV pattern
   for (let i = 0; i < lines.length; i++) {
     if (/TOPKDV/i.test(lines[i])) {
-      // Aynı satırda değer var mı?
       const sameLineMatch = lines[i].match(/TOPKDV[^0-9]*[*+]?([\d]+[.,][\d]{2})/i);
       if (sameLineMatch) {
         const vat = parseNumber(sameLineMatch[1]);
@@ -848,23 +826,7 @@ function extractVAT(text, total) {
     }
   }
 
-  // 4. "TOPKDV" kelimesinden sonra gelen ilk küçük sayıyı bul
-  const topkdvIndex = text.toUpperCase().indexOf('TOPKDV');
-  if (topkdvIndex !== -1) {
-    const afterTopkdv = text.substring(topkdvIndex);
-    const smallValues = afterTopkdv.match(/[*+]?([\d]{1,3}[.,][\d]{2})/g);
-    if (smallValues) {
-      for (const val of smallValues) {
-        const num = parseNumber(val.replace(/[*+]/g, ''));
-        if (!isNaN(num) && num > 0 && (total === 0 || (num < maxVat && num > minVat))) {
-          console.log('📊 KDV bulundu (TOPKDV sonrası küçük değer):', num);
-          return num;
-        }
-      }
-    }
-  }
-
-  // 5. KDV TUTARI pattern'i
+  // 4. KDV TUTARI pattern
   const kdvTutarMatch = text.match(/KDV\s*TUTARI[^0-9]*([\d]+[.,][\d]{2})/i);
   if (kdvTutarMatch) {
     const vat = parseNumber(kdvTutarMatch[1]);
@@ -874,7 +836,46 @@ function extractVAT(text, total) {
     }
   }
 
-  // 6. %X KDV formatları
+  // 5. %10 KDV hesaplama - eğer metinde "%10" varsa ve toplam biliniyorsa
+  if (total > 0 && /%\s*10/i.test(text)) {
+    // %10 KDV formülü: KDV = Toplam * 10 / 110
+    const calculatedVat = (total * 10) / 110;
+    // Metinde bu değere yakın bir sayı var mı kontrol et
+    const allNumbers = text.match(/[\d.,]+/g) || [];
+    for (const numStr of allNumbers) {
+      const num = parseNumber(numStr);
+      // Hesaplanan KDV'ye %5 toleransla yakın mı?
+      if (num > 0 && Math.abs(num - calculatedVat) < calculatedVat * 0.05) {
+        console.log('📊 KDV bulundu (%10 hesaplama ile doğrulama):', num);
+        return num;
+      }
+    }
+  }
+
+  // 6. AKILLI ANALİZ: Toplam biliniyorsa, mantıklı KDV değerini bul
+  // KDV oranları: %1, %8, %10, %18, %20
+  // KDV = Toplam * Oran / (100 + Oran)
+  if (total > 0) {
+    const possibleVatRates = [1, 8, 10, 18, 20];
+    const allNumbers = text.match(/[\d.,]+/g) || [];
+    
+    for (const numStr of allNumbers) {
+      const num = parseNumber(numStr);
+      if (num <= 0 || num >= total) continue;
+      
+      // Bu sayı herhangi bir KDV oranına uyuyor mu?
+      for (const rate of possibleVatRates) {
+        const expectedVat = (total * rate) / (100 + rate);
+        // %2 tolerans
+        if (Math.abs(num - expectedVat) < expectedVat * 0.02) {
+          console.log(`📊 KDV bulundu (akıllı analiz, %${rate}):`, num);
+          return num;
+        }
+      }
+    }
+  }
+
+  // 7. Son çare: %X KDV formatları
   const vatLinePatterns = [
     /KDV\s*%?\s*1[:\s]+([\d]+[.,][\d]{2})/gi,
     /KDV\s*%?\s*8[:\s]+([\d]+[.,][\d]{2})/gi,
@@ -897,16 +898,6 @@ function extractVAT(text, total) {
   if (totalVat > 0) {
     console.log('📊 KDV bulundu (çoklu oran toplamı):', totalVat);
     return totalVat;
-  }
-
-  // 7. Son çare: Genel KDV pattern
-  const generalVatMatch = text.match(/(?:TOPLAM\s*KDV|TOP\.?\s*KDV)[:\s]*([\d]+[.,][\d]{2})/i);
-  if (generalVatMatch) {
-    const vat = parseNumber(generalVatMatch[1]);
-    if (!isNaN(vat) && vat > 0 && (total === 0 || vat < maxVat)) {
-      console.log('📊 KDV bulundu (genel pattern):', vat);
-      return vat;
-    }
   }
 
   console.log('⚠️ KDV bulunamadı');
