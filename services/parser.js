@@ -1,6 +1,6 @@
 // backend/services/parser.js
 // ==========================================
-// FİŞ PARSE FONKSİYONU - GELİŞMİŞ VERSİYON v2.0
+// FİŞ PARSE FONKSİYONU - GELİŞMİŞ VERSİYON v2.1
 // ==========================================
 
 function parseReceipt(text) {
@@ -49,8 +49,8 @@ function parseReceipt(text) {
   // 7. SAAT
   data.time = extractTime(text);
 
-  // 8. FİŞ NUMARASI
-  data.receiptNumber = extractReceiptNumber(text);
+  // 8. FİŞ NUMARASI - lines'ı da gönder
+  data.receiptNumber = extractReceiptNumber(text, lines);
   console.log('🔢 Fiş No:', data.receiptNumber);
 
   // 9. ÖDEME YÖNTEMİ
@@ -107,7 +107,7 @@ function detectCategory(text) {
       'taksi', 'taxi', 'uber', 'otobus', 'otobüs', 'tramvay',
       'vapur', 'ferry', 'bilet', 'ticket', 'otopark', 'parking', 'hgs',
       'ogs', 'köprü', 'kopru', 'geçiş', 'gecis', 'otoyol', 'izban', 'eshot',
-      'iett', 'ego', 'kent kart', 'kentkart', 'istanbulkart'
+      'iett', 'ego', 'kent kart', 'kentkart', 'istanbulkart', 'izelman'
     ],
     'Sağlık': [
       'eczane', 'pharmacy', 'hastane', 'hospital', 'doktor', 'klinik',
@@ -164,7 +164,8 @@ function detectCategory(text) {
 function extractCompanyName(lines, text) {
   // Önce bilinen firma isimlerini ara
   const knownCompanies = [
-    { pattern: /HALKTAN[^\n]*/i, name: null }, // Pattern'den al
+    { pattern: /IZELMAN[^\n]*/i, name: null }, // Pattern'den al
+    { pattern: /HALKTAN[^\n]*/i, name: null },
     { pattern: /MİGROS|MIGROS/i, name: 'MİGROS' },
     { pattern: /CARREFOUR/i, name: 'CARREFOUR' },
     { pattern: /A101/i, name: 'A101' },
@@ -415,34 +416,95 @@ function extractTime(text) {
 }
 
 // ==========================================
-// FİŞ NUMARASI ÇIKARMA - GELİŞTİRİLMİŞ
+// FİŞ NUMARASI ÇIKARMA - GELİŞTİRİLMİŞ v3.0
 // ==========================================
-function extractReceiptNumber(text) {
+function extractReceiptNumber(text, lines) {
+  console.log('🔢 Fiş no aranıyor...');
+  
+  // Lines yoksa oluştur
+  if (!lines) {
+    lines = text.split('\n').map(line => line.trim()).filter(line => line);
+  }
+
+  // 1. ÖNCELİKLİ: Satır bazlı analiz - "FİŞ NO" satırından sonraki değer
+  // OCR bazen "FİŞ NO" ve değeri ayrı satırlara koyuyor
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].toUpperCase();
+    
+    // "FİŞ NO", "FIS NO" gibi satır mı?
+    if (/^F[İI]?[SŞ]\s*NO\s*:?\s*$/i.test(line) || /^F[İI]?[SŞ]\s*NO$/i.test(line)) {
+      // Sonraki satırlarda değer ara
+      for (let j = i + 1; j < Math.min(i + 3, lines.length); j++) {
+        const nextLine = lines[j].trim();
+        // : ile başlayabilir veya doğrudan sayı olabilir
+        const numMatch = nextLine.match(/^:?\s*(\d{3,10})$/);
+        if (numMatch) {
+          console.log('✅ Fiş no bulundu (sonraki satır):', numMatch[1]);
+          return numMatch[1];
+        }
+      }
+    }
+    
+    // Aynı satırda "FİŞ NO : 00023" veya "FİŞ NO: 00023"
+    const sameLineMatch = line.match(/F[İI]?[SŞ]\s*NO\s*:?\s*(\d{3,10})/i);
+    if (sameLineMatch) {
+      console.log('✅ Fiş no bulundu (aynı satır):', sameLineMatch[1]);
+      return sameLineMatch[1];
+    }
+  }
+
+  // 2. e-Arşiv fatura numarası (A ile başlayan, 16+ karakter)
+  const eArsivMatch = text.match(/(?:FATURA\s*NO|FATURA\s*NUMARASI|BELGE\s*NO)[:\s#]*([A-Z]\d{10,20})/i);
+  if (eArsivMatch) {
+    console.log('✅ e-Arşiv fatura no bulundu:', eArsivMatch[1]);
+    return eArsivMatch[1];
+  }
+
+  // 3. ETTN (e-arşiv için)
+  const ettnMatch = text.match(/ETTN[:\s]*([A-Fa-f0-9\-]{20,50})/i);
+  if (ettnMatch) {
+    console.log('✅ ETTN bulundu:', ettnMatch[1]);
+    return ettnMatch[1];
+  }
+
+  // 4. Z NO
+  const zNoMatch = text.match(/Z\s*NO[:\s]*:?\s*(\d{3,10})/i);
+  if (zNoMatch) {
+    console.log('✅ Z no bulundu:', zNoMatch[1]);
+    return zNoMatch[1];
+  }
+
+  // 5. EKÜ NO
+  const ekuMatch = text.match(/EK[ÜU]\s*NO[:\s]*:?\s*(\d{3,10})/i);
+  if (ekuMatch) {
+    console.log('✅ EKÜ no bulundu:', ekuMatch[1]);
+    return ekuMatch[1];
+  }
+
+  // 6. Genel fiş/belge no pattern'leri
   const patterns = [
-    // e-Arşiv fatura numarası (A ile başlayan)
-    /(?:FATURA\s*NO|FATURA\s*NUMARASI)[:\s#]*([A-Z]\d{10,20})/i,
-    // Genel fiş/belge no
-    /(?:FİŞ\s*NO|FIS\s*NO|BELGE\s*NO|RECEIPT|SERİ\s*NO)[:\s#]*([A-Z0-9\-]+)/i,
-    // Sadece numara
-    /(?:NO|NUMARA)[:\s#]*(\d{6,})/i,
-    // Z NO
-    /Z\s*NO[:\s]*(\d+)/i,
-    // EKÜ NO
-    /EKÜ\s*NO[:\s]*(\d+)/i,
-    // ETTN (e-arşiv için)
-    /ETTN[:\s]*([A-Z0-9\-]+)/i
+    /(?:BELGE\s*NO|RECEIPT\s*NO|SERİ\s*NO)[:\s#]*([A-Z0-9\-]{3,20})/i,
+    /(?:NO|NUMARA)[:\s#]*(\d{6,})/i
   ];
 
   for (const pattern of patterns) {
     const match = text.match(pattern);
     if (match && match[1]) {
       const num = match[1].trim();
-      // Telefon numarası olmadığından emin ol
-      if (!/^0?\d{10}$/.test(num) && !/^444/.test(num)) {
+      // Telefon numarası, MERSİS no gibi değerleri atla
+      if (!/^0?\d{10,11}$/.test(num) && !/^444/.test(num) && !/^850/.test(num)) {
+        // 16 haneli ve 0 ile başlıyorsa MERSİS olabilir, atla
+        if (num.length === 16 && num.startsWith('0')) {
+          console.log('⚠️ MERSİS no atlandı:', num);
+          continue;
+        }
+        console.log('✅ Fiş no bulundu (genel pattern):', num);
         return num;
       }
     }
   }
+
+  console.log('⚠️ Fiş no bulunamadı');
   return null;
 }
 
@@ -812,7 +874,7 @@ function extractVAT(text, total) {
     }
   }
 
-  // 3. TOPKDV pattern
+  // 3. TOPKDV pattern - aynı satırda değer
   for (let i = 0; i < lines.length; i++) {
     if (/TOPKDV/i.test(lines[i])) {
       const sameLineMatch = lines[i].match(/TOPKDV[^0-9]*[*+]?([\d]+[.,][\d]{2})/i);
