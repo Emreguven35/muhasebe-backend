@@ -614,84 +614,138 @@ function convertTurkishToNumber(text) {
 }
 
 // ==========================================
-// KDV ÇIKARMA - GELİŞTİRİLMİŞ v2.0
+// KDV ÇIKARMA - GELİŞTİRİLMİŞ v3.0
 // ==========================================
 function extractVAT(text, total) {
-  let totalVat = 0;
-
-  // TOPKDV pattern'i (en güvenilir)
-  const topkdvPattern = /TOPKDV[:\s*₺TL]*[*+]?([\d.,]+)/gi;
-  let match = topkdvPattern.exec(text);
-  if (match) {
-    const vat = parseFloat(match[1].replace(/\./g, '').replace(',', '.'));
-    if (!isNaN(vat) && vat > 0 && vat < total) {
-      console.log('📊 KDV bulundu (TOPKDV):', vat);
-      return vat;
+  console.log('🔍 KDV aranıyor, toplam tutar:', total);
+  
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+  
+  // 1. TOPKDV satırını bul ve değerini al
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    // TOPKDV ile aynı satırda değer var mı?
+    if (/TOPKDV/i.test(line)) {
+      const sameLineMatch = line.match(/TOPKDV[^0-9]*[*+]?([\d]+[.,][\d]{2})/i);
+      if (sameLineMatch) {
+        const vat = parseFloat(sameLineMatch[1].replace(/\./g, '').replace(',', '.'));
+        if (!isNaN(vat) && vat > 0 && vat < total * 0.30) {
+          console.log('📊 KDV bulundu (TOPKDV aynı satır):', vat);
+          return vat;
+        }
+      }
     }
   }
 
-  // KDV TUTARI pattern'i
-  const kdvTutarPattern = /KDV\s*TUTARI[:\s*₺TL]*([\d.,]+)/gi;
-  match = kdvTutarPattern.exec(text);
-  if (match) {
-    const vat = parseFloat(match[1].replace(/\./g, '').replace(',', '.'));
-    if (!isNaN(vat) && vat > 0 && vat < total) {
+  // 2. "TOPKDV" kelimesinden sonra gelen ilk küçük sayıyı bul
+  // OCR'da satırlar karışık olabilir, tüm metinde TOPKDV'den sonra gelen küçük değeri ara
+  const topkdvIndex = text.toUpperCase().indexOf('TOPKDV');
+  if (topkdvIndex !== -1) {
+    const afterTopkdv = text.substring(topkdvIndex);
+    // Küçük değerler (KDV olabilecek): 1-500 arası, ondalıklı
+    const smallValues = afterTopkdv.match(/[*+]?([\d]{1,3}[.,][\d]{2})/g);
+    if (smallValues) {
+      for (const val of smallValues) {
+        const numStr = val.replace(/[*+]/g, '').replace(/\./g, '').replace(',', '.');
+        const num = parseFloat(numStr);
+        // KDV, toplam tutarın %1-25'i arasında olmalı (makul aralık)
+        if (!isNaN(num) && num > 0 && num < total * 0.25 && num > total * 0.005) {
+          console.log('📊 KDV bulundu (TOPKDV sonrası küçük değer):', num);
+          return num;
+        }
+      }
+    }
+  }
+
+  // 3. KDV TUTARI satırını ara
+  const kdvTutarMatch = text.match(/KDV\s*TUTARI[^0-9]*([\d]+[.,][\d]{2})/i);
+  if (kdvTutarMatch) {
+    const vat = parseFloat(kdvTutarMatch[1].replace(/\./g, '').replace(',', '.'));
+    if (!isNaN(vat) && vat > 0 && vat < total * 0.30) {
       console.log('📊 KDV bulundu (KDV TUTARI):', vat);
       return vat;
     }
   }
 
-  // Çoklu KDV oranlarını topla
-  const vatPatterns = [
-    { pattern: /(?:%\s*1\s*[*+]|KDV\s*%?\s*1\b)[:\s*₺TL]*([\d.,]+)/gi, rate: 1 },
-    { pattern: /(?:%\s*8\s*[*+]|KDV\s*%?\s*8\b)[:\s*₺TL]*([\d.,]+)/gi, rate: 8 },
-    { pattern: /(?:%\s*10\s*[*+]|KDV\s*%?\s*10\b)[:\s*₺TL]*([\d.,]+)/gi, rate: 10 },
-    { pattern: /(?:%\s*18\s*[*+]|KDV\s*%?\s*18\b)[:\s*₺TL]*([\d.,]+)/gi, rate: 18 },
-    { pattern: /(?:%\s*20\s*[*+]|KDV\s*%?\s*20\b)[:\s*₺TL]*([\d.,]+)/gi, rate: 20 }
+  // 4. Satır satır analiz - "KDV" kelimesinden sonraki değer
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    // Sadece "KDV" yazan satır (başlık satırı)
+    if (/^KDV$/i.test(line)) {
+      // Sonraki 5 satırda küçük değer ara
+      for (let j = i + 1; j < Math.min(i + 6, lines.length); j++) {
+        const match = lines[j].match(/^[*+]?([\d]{1,3}[.,][\d]{2})$/);
+        if (match) {
+          const vat = parseFloat(match[1].replace(/\./g, '').replace(',', '.'));
+          if (!isNaN(vat) && vat > 0 && vat < total * 0.25 && vat > total * 0.005) {
+            console.log('📊 KDV bulundu (KDV satırı sonrası):', vat);
+            return vat;
+          }
+        }
+      }
+    }
+  }
+
+  // 5. ODENECEK/ÖDENECEK TUTAR'dan önce gelen küçük değer
+  for (let i = 0; i < lines.length; i++) {
+    if (/ÖDENECEK|ODENECEK/i.test(lines[i])) {
+      // Önceki 5 satıra bak
+      for (let j = i - 1; j >= Math.max(0, i - 6); j--) {
+        const match = lines[j].match(/^[*+]?([\d]{1,3}[.,][\d]{2})$/);
+        if (match) {
+          const vat = parseFloat(match[1].replace(/\./g, '').replace(',', '.'));
+          if (!isNaN(vat) && vat > 0 && vat < total * 0.25 && vat > total * 0.005) {
+            console.log('📊 KDV bulundu (ODENECEK öncesi):', vat);
+            return vat;
+          }
+        }
+      }
+    }
+  }
+
+  // 6. Tüm metinde makul KDV değerlerini topla
+  // Pattern: KDV %X değer veya %X *değer formatları
+  // ANCAK: %01 *71,49 gibi değerler ÜRÜN FİYATI, KDV değil!
+  // Gerçek KDV satırları genelde: "KDV %1: 5,50" veya "TOPKDV: 8,73" formatında
+  
+  let totalVat = 0;
+  const vatLinePatterns = [
+    /KDV\s*%?\s*1[:\s]+([\d]+[.,][\d]{2})/gi,
+    /KDV\s*%?\s*8[:\s]+([\d]+[.,][\d]{2})/gi,
+    /KDV\s*%?\s*10[:\s]+([\d]+[.,][\d]{2})/gi,
+    /KDV\s*%?\s*18[:\s]+([\d]+[.,][\d]{2})/gi,
+    /KDV\s*%?\s*20[:\s]+([\d]+[.,][\d]{2})/gi
   ];
 
-  for (const { pattern } of vatPatterns) {
+  for (const pattern of vatLinePatterns) {
     let match;
     while ((match = pattern.exec(text)) !== null) {
-      const vatStr = match[1]
-        .replace(/\./g, '')
-        .replace(',', '.');
-      const vat = parseFloat(vatStr);
-      if (!isNaN(vat) && vat > 0) {
+      const vat = parseFloat(match[1].replace(/\./g, '').replace(',', '.'));
+      if (!isNaN(vat) && vat > 0 && vat < total * 0.10) { // Her KDV oranı max %10
         totalVat += vat;
       }
     }
   }
 
-  if (totalVat > 0) {
+  if (totalVat > 0 && totalVat < total * 0.30) {
     console.log('📊 KDV bulundu (çoklu oran toplamı):', totalVat);
     return totalVat;
   }
 
-  // Genel KDV pattern'i
-  const generalPatterns = [
-    /(?:KDV|TOPLAM\s*KDV|TOP\.?\s*KDV)[:\s*₺TL]*([\d.,]+)/gi,
-    /(?:VAT|TAX)[:\s*₺TL]*([\d.,]+)/gi
-  ];
-
-  for (const pattern of generalPatterns) {
-    let match;
-    while ((match = pattern.exec(text)) !== null) {
-      const vatStr = match[1]
-        .replace(/\./g, '')
-        .replace(',', '.');
-      const vat = parseFloat(vatStr);
-      if (!isNaN(vat) && vat > 0 && vat < total) {
-        totalVat += vat;
-      }
+  // 7. Son çare: Genel KDV pattern
+  const generalVatMatch = text.match(/(?:TOPLAM\s*KDV|TOP\.?\s*KDV)[:\s]*([\d]+[.,][\d]{2})/i);
+  if (generalVatMatch) {
+    const vat = parseFloat(generalVatMatch[1].replace(/\./g, '').replace(',', '.'));
+    if (!isNaN(vat) && vat > 0 && vat < total * 0.30) {
+      console.log('📊 KDV bulundu (genel pattern):', vat);
+      return vat;
     }
   }
 
-  if (totalVat > 0) {
-    console.log('📊 KDV bulundu (genel pattern):', totalVat);
-  }
-
-  return totalVat;
+  console.log('⚠️ KDV bulunamadı');
+  return 0;
 }
 
 // ==========================================
