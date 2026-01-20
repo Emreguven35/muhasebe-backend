@@ -29,10 +29,30 @@ pool.connect((err, client, release) => {
   }
 });
 
-// Google Vision Client
-const visionClient = new vision.ImageAnnotatorClient({
-  keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS
-});
+// Google Vision Client - JSON credentials desteği
+let visionClient;
+
+try {
+  if (process.env.GOOGLE_CREDENTIALS_JSON) {
+    // Railway'de JSON string'den oku
+    const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
+    visionClient = new vision.ImageAnnotatorClient({
+      credentials: credentials
+    });
+    console.log('✅ Google Vision API - JSON credentials yüklendi');
+  } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+    // Local'de dosya path'inden oku
+    visionClient = new vision.ImageAnnotatorClient({
+      keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS
+    });
+    console.log('✅ Google Vision API - File credentials yüklendi');
+  } else {
+    console.error('❌ Google Vision credentials bulunamadı!');
+    throw new Error('Google Vision credentials eksik');
+  }
+} catch (error) {
+  console.error('❌ Google Vision setup hatası:', error);
+}
 
 // Middleware
 app.use(cors());
