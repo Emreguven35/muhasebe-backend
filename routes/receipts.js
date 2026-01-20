@@ -53,7 +53,60 @@ async function compressImage(imagePath) {
   
   return compressedPath;
 }
+// Dashboard istatistikleri (GET /api/receipts/stats)
+router.get('/stats', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    console.log('📊 Stats isteği, User ID:', userId);
 
+    // Toplam fiş sayısı ve tutarlar
+    const receiptsResult = await pool.query(
+      `SELECT 
+        COUNT(*) as total_count,
+        COALESCE(SUM(total), 0) as total_amount,
+        COALESCE(SUM(vat), 0) as total_vat
+       FROM receipts WHERE user_id = $1`,
+      [userId]
+    );
+
+    // Bu ayki fişler
+    const monthlyResult = await pool.query(
+      `SELECT 
+        COUNT(*) as monthly_count,
+        COALESCE(SUM(total), 0) as monthly_amount
+       FROM receipts 
+       WHERE user_id = $1 
+       AND date >= date_trunc('month', CURRENT_DATE)`,
+      [userId]
+    );
+
+    // Kategori bazlı dağılım
+    const categoryResult = await pool.query(
+      `SELECT 
+        category,
+        COUNT(*) as count,
+        COALESCE(SUM(total), 0) as amount
+       FROM receipts 
+       WHERE user_id = $1 
+       GROUP BY category
+       ORDER BY amount DESC`,
+      [userId]
+    );
+
+    res.json({
+      totalReceipts: parseInt(receiptsResult.rows[0].total_count),
+      totalAmount: parseFloat(receiptsResult.rows[0].total_amount),
+      totalVat: parseFloat(receiptsResult.rows[0].total_vat),
+      monthlyReceipts: parseInt(monthlyResult.rows[0].monthly_count),
+      monthlyAmount: parseFloat(monthlyResult.rows[0].monthly_amount),
+      categoryBreakdown: categoryResult.rows
+    });
+
+  } catch (error) {
+    console.error('❌ Stats hatası:', error);
+    res.status(500).json({ error: 'İstatistikler alınırken hata oluştu' });
+  }
+});
 // Fişleri listele (GET /api/receipts)
 router.get('/', authenticateToken, async (req, res) => {
   try {
