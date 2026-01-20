@@ -304,7 +304,39 @@ function extractTaxNumber(text) {
 // TARİH ÇIKARMA - GELİŞTİRİLMİŞ
 // ==========================================
 function extractDate(text) {
-  // Önce "TARİH" veya "DATE" ile başlayan satırı ara
+  // 1. Önce YYYY-MM-DD formatını ara (e-Fatura formatı)
+  const isoPattern = /(?:TARİH|TARIH|DATE)\s*[:\s]\s*(\d{4})[\/\.\-](\d{2})[\/\.\-](\d{2})/i;
+  const isoMatch = text.match(isoPattern);
+  if (isoMatch) {
+    const year = isoMatch[1];
+    const month = isoMatch[2];
+    const day = isoMatch[3];
+    const dayNum = parseInt(day);
+    const monthNum = parseInt(month);
+    if (dayNum >= 1 && dayNum <= 31 && monthNum >= 1 && monthNum <= 12) {
+      console.log('📅 Tarih bulundu (ISO format):', `${year}-${month}-${day}`);
+      return `${year}-${month}-${day}`;
+    }
+  }
+
+  // 2. Genel YYYY-MM-DD pattern (TARİH kelimesi olmadan)
+  const isoGeneralPattern = /(\d{4})[\/\.\-](\d{2})[\/\.\-](\d{2})/;
+  const isoGeneralMatch = text.match(isoGeneralPattern);
+  if (isoGeneralMatch) {
+    const year = isoGeneralMatch[1];
+    const month = isoGeneralMatch[2];
+    const day = isoGeneralMatch[3];
+    const yearNum = parseInt(year);
+    const dayNum = parseInt(day);
+    const monthNum = parseInt(month);
+    // Yıl 2020-2030 arasında olmalı
+    if (yearNum >= 2020 && yearNum <= 2030 && dayNum >= 1 && dayNum <= 31 && monthNum >= 1 && monthNum <= 12) {
+      console.log('📅 Tarih bulundu (ISO genel):', `${year}-${month}-${day}`);
+      return `${year}-${month}-${day}`;
+    }
+  }
+
+  // 3. DD/MM/YYYY veya DD.MM.YYYY formatı (TARİH ile)
   const dateLinePatterns = [
     /(?:TARİH|TARIH|DATE)\s*[:\s]\s*(\d{2})[\/\.\-](\d{2})[\/\.\-](\d{4})/i,
     /(?:TARİH|TARIH|DATE)\s*[:\s]\s*(\d{2})[\/\.\-](\d{2})[\/\.\-](\d{2})(?!\d)/i
@@ -324,12 +356,13 @@ function extractDate(text) {
       const dayNum = parseInt(day);
       const monthNum = parseInt(month);
       if (dayNum >= 1 && dayNum <= 31 && monthNum >= 1 && monthNum <= 12) {
+        console.log('📅 Tarih bulundu (DD/MM/YYYY):', `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
         return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
       }
     }
   }
 
-  // Genel tarih pattern'leri
+  // 4. Genel tarih pattern'leri
   const patterns = [
     // DD/MM/YYYY veya DD.MM.YYYY
     /(\d{2})[\/\.\-](\d{2})[\/\.\-](\d{4})/,
@@ -439,17 +472,57 @@ function extractPaymentMethod(text) {
 // TOPLAM TUTAR ÇIKARMA - EN ÖNEMLİ! v2.0
 // ==========================================
 function extractTotal(text) {
-  // Önce en spesifik pattern'leri dene (sıralı öncelik)
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+  
+  // 1. Satır bazlı analiz - "TOPLAM TUTAR" veya "TOPLAM" satırından sonraki değer
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].toUpperCase();
+    
+    // TOPLAM TUTAR, GENEL TOPLAM, ÖDENECEK TUTAR satırı mı?
+    if (/^(TOPLAM\s*TUTAR|GENEL\s*TOPLAM|ÖDENECEK\s*TUTAR|ODENECEK\s*TUTAR|NET\s*TUTAR)$/i.test(line) ||
+        /^TOPLAM$/i.test(line)) {
+      // Sonraki satırlarda sayı ara
+      for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
+        const numMatch = lines[j].match(/^[*+]?([\d.,]+)(?:\s*₺|\s*TL)?$/);
+        if (numMatch) {
+          const total = parseFloat(numMatch[1].replace(/\./g, '').replace(',', '.'));
+          if (!isNaN(total) && total > 0 && total < 1000000) {
+            console.log('💵 Toplam bulundu (satır bazlı):', total);
+            return total;
+          }
+        }
+      }
+    }
+    
+    // Aynı satırda "TOPLAM TUTAR: 5000.00" formatı
+    const sameLine = lines[i].match(/(?:TOPLAM\s*TUTAR|GENEL\s*TOPLAM|ÖDENECEK|ODENECEK)[:\s]*([\d.,]+)/i);
+    if (sameLine) {
+      const total = parseFloat(sameLine[1].replace(/\./g, '').replace(',', '.'));
+      if (!isNaN(total) && total > 0 && total < 1000000) {
+        console.log('💵 Toplam bulundu (aynı satır):', total);
+        return total;
+      }
+    }
+  }
+
+  // 2. "İşlem Nakit: X TL" veya "İşlem Kredi: X TL" formatı (e-Fatura)
+  const islemPattern = /İşlem\s*(?:Nakit|Kredi|Kart)[:\s]*([\d.,]+)\s*(?:₺|TL)/i;
+  const islemMatch = text.match(islemPattern);
+  if (islemMatch) {
+    const total = parseFloat(islemMatch[1].replace(/\./g, '').replace(',', '.'));
+    if (!isNaN(total) && total > 0 && total < 1000000) {
+      console.log('💵 Toplam bulundu (İşlem pattern):', total);
+      return total;
+    }
+  }
+
+  // 3. Öncelikli pattern'ler
   const priorityPatterns = [
-    // ÖDENECEK TUTAR (en güvenilir)
     /(?:ÖDENECEK\s*TUTAR|ODENECEK\s*TUTAR)[:\s*₺TL]*([\d.,]+)/i,
-    // GENEL TOPLAM
     /(?:GENEL\s*TOPLAM)[:\s*₺TL]*([\d.,]+)/i,
-    // NET TUTAR
     /(?:NET\s*TUTAR)[:\s*₺TL]*([\d.,]+)/i,
-    // TOPLAM (ama "ARA TOPLAM", "KDV TOPLAM" vs. değil)
+    /(?:TOPLAM\s*TUTAR)[:\s*₺TL]*([\d.,]+)/i,
     /(?:^|\n)\s*TOPLAM[:\s*₺TL]*([\d.,]+)/im,
-    // MAL/HİZMET TOPLAM TUTARI
     /(?:MAL\/HİZMET\s*TOPLAM\s*TUTARI|MAL\/HIZMET\s*TOPLAM\s*TUTARI)[:\s*₺TL]*([\d.,]+)/i
   ];
 
@@ -457,8 +530,8 @@ function extractTotal(text) {
     const match = text.match(pattern);
     if (match) {
       const totalStr = match[1]
-        .replace(/\./g, '')  // Binlik ayracı kaldır
-        .replace(',', '.');   // Ondalık virgülü noktaya çevir
+        .replace(/\./g, '')
+        .replace(',', '.');
       
       const total = parseFloat(totalStr);
       
@@ -619,18 +692,61 @@ function convertTurkishToNumber(text) {
 function extractVAT(text, total) {
   console.log('🔍 KDV aranıyor, toplam tutar:', total);
   
+  // Total 0 ise KDV araması anlamsız, ama yine de deneyelim
+  const maxVat = total > 0 ? total * 0.30 : 100000;
+  const minVat = total > 0 ? total * 0.005 : 0.01;
+  
   const lines = text.split('\n').map(l => l.trim()).filter(l => l);
   
-  // 1. TOPKDV satırını bul ve değerini al
+  // 1. "KDV" satırından sonraki değer (e-Fatura formatı)
+  // Örnek: KDV\n454.55
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+    const line = lines[i].toUpperCase();
     
-    // TOPKDV ile aynı satırda değer var mı?
-    if (/TOPKDV/i.test(line)) {
-      const sameLineMatch = line.match(/TOPKDV[^0-9]*[*+]?([\d]+[.,][\d]{2})/i);
+    // Sadece "KDV" veya "TOPLAM KDV" yazan satır
+    if (/^(KDV|TOPLAM\s*KDV|TOPKDV)$/i.test(lines[i])) {
+      // Sonraki satırlarda sayı ara
+      for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
+        const numMatch = lines[j].match(/^[*+]?([\d.,]+)(?:\s*₺|\s*TL)?$/);
+        if (numMatch) {
+          const vat = parseFloat(numMatch[1].replace(/\./g, '').replace(',', '.'));
+          if (!isNaN(vat) && vat > 0 && (total === 0 || (vat < maxVat && vat > minVat))) {
+            console.log('📊 KDV bulundu (satır bazlı):', vat);
+            return vat;
+          }
+        }
+      }
+    }
+    
+    // "KDV: 454.55" formatı (aynı satırda)
+    const kdvSameLine = lines[i].match(/^KDV[:\s]*([\d.,]+)/i);
+    if (kdvSameLine) {
+      const vat = parseFloat(kdvSameLine[1].replace(/\./g, '').replace(',', '.'));
+      if (!isNaN(vat) && vat > 0 && (total === 0 || (vat < maxVat && vat > minVat))) {
+        console.log('📊 KDV bulundu (aynı satır):', vat);
+        return vat;
+      }
+    }
+  }
+
+  // 2. TOPLAM KDV satırını bul
+  const toplamKdvMatch = text.match(/TOPLAM\s*KDV[:\s]*([\d.,]+)/i);
+  if (toplamKdvMatch) {
+    const vat = parseFloat(toplamKdvMatch[1].replace(/\./g, '').replace(',', '.'));
+    if (!isNaN(vat) && vat > 0) {
+      console.log('📊 KDV bulundu (TOPLAM KDV):', vat);
+      return vat;
+    }
+  }
+
+  // 3. TOPKDV satırını bul ve değerini al
+  for (let i = 0; i < lines.length; i++) {
+    if (/TOPKDV/i.test(lines[i])) {
+      // Aynı satırda değer var mı?
+      const sameLineMatch = lines[i].match(/TOPKDV[^0-9]*[*+]?([\d]+[.,][\d]{2})/i);
       if (sameLineMatch) {
         const vat = parseFloat(sameLineMatch[1].replace(/\./g, '').replace(',', '.'));
-        if (!isNaN(vat) && vat > 0 && vat < total * 0.30) {
+        if (!isNaN(vat) && vat > 0 && (total === 0 || vat < maxVat)) {
           console.log('📊 KDV bulundu (TOPKDV aynı satır):', vat);
           return vat;
         }
@@ -638,19 +754,16 @@ function extractVAT(text, total) {
     }
   }
 
-  // 2. "TOPKDV" kelimesinden sonra gelen ilk küçük sayıyı bul
-  // OCR'da satırlar karışık olabilir, tüm metinde TOPKDV'den sonra gelen küçük değeri ara
+  // 4. "TOPKDV" kelimesinden sonra gelen ilk küçük sayıyı bul
   const topkdvIndex = text.toUpperCase().indexOf('TOPKDV');
   if (topkdvIndex !== -1) {
     const afterTopkdv = text.substring(topkdvIndex);
-    // Küçük değerler (KDV olabilecek): 1-500 arası, ondalıklı
     const smallValues = afterTopkdv.match(/[*+]?([\d]{1,3}[.,][\d]{2})/g);
     if (smallValues) {
       for (const val of smallValues) {
         const numStr = val.replace(/[*+]/g, '').replace(/\./g, '').replace(',', '.');
         const num = parseFloat(numStr);
-        // KDV, toplam tutarın %1-25'i arasında olmalı (makul aralık)
-        if (!isNaN(num) && num > 0 && num < total * 0.25 && num > total * 0.005) {
+        if (!isNaN(num) && num > 0 && (total === 0 || (num < maxVat && num > minVat))) {
           console.log('📊 KDV bulundu (TOPKDV sonrası küçük değer):', num);
           return num;
         }
@@ -658,59 +771,17 @@ function extractVAT(text, total) {
     }
   }
 
-  // 3. KDV TUTARI satırını ara
+  // 5. KDV TUTARI pattern'i
   const kdvTutarMatch = text.match(/KDV\s*TUTARI[^0-9]*([\d]+[.,][\d]{2})/i);
   if (kdvTutarMatch) {
     const vat = parseFloat(kdvTutarMatch[1].replace(/\./g, '').replace(',', '.'));
-    if (!isNaN(vat) && vat > 0 && vat < total * 0.30) {
+    if (!isNaN(vat) && vat > 0 && (total === 0 || vat < maxVat)) {
       console.log('📊 KDV bulundu (KDV TUTARI):', vat);
       return vat;
     }
   }
 
-  // 4. Satır satır analiz - "KDV" kelimesinden sonraki değer
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    
-    // Sadece "KDV" yazan satır (başlık satırı)
-    if (/^KDV$/i.test(line)) {
-      // Sonraki 5 satırda küçük değer ara
-      for (let j = i + 1; j < Math.min(i + 6, lines.length); j++) {
-        const match = lines[j].match(/^[*+]?([\d]{1,3}[.,][\d]{2})$/);
-        if (match) {
-          const vat = parseFloat(match[1].replace(/\./g, '').replace(',', '.'));
-          if (!isNaN(vat) && vat > 0 && vat < total * 0.25 && vat > total * 0.005) {
-            console.log('📊 KDV bulundu (KDV satırı sonrası):', vat);
-            return vat;
-          }
-        }
-      }
-    }
-  }
-
-  // 5. ODENECEK/ÖDENECEK TUTAR'dan önce gelen küçük değer
-  for (let i = 0; i < lines.length; i++) {
-    if (/ÖDENECEK|ODENECEK/i.test(lines[i])) {
-      // Önceki 5 satıra bak
-      for (let j = i - 1; j >= Math.max(0, i - 6); j--) {
-        const match = lines[j].match(/^[*+]?([\d]{1,3}[.,][\d]{2})$/);
-        if (match) {
-          const vat = parseFloat(match[1].replace(/\./g, '').replace(',', '.'));
-          if (!isNaN(vat) && vat > 0 && vat < total * 0.25 && vat > total * 0.005) {
-            console.log('📊 KDV bulundu (ODENECEK öncesi):', vat);
-            return vat;
-          }
-        }
-      }
-    }
-  }
-
-  // 6. Tüm metinde makul KDV değerlerini topla
-  // Pattern: KDV %X değer veya %X *değer formatları
-  // ANCAK: %01 *71,49 gibi değerler ÜRÜN FİYATI, KDV değil!
-  // Gerçek KDV satırları genelde: "KDV %1: 5,50" veya "TOPKDV: 8,73" formatında
-  
-  let totalVat = 0;
+  // 6. %X KDV formatları
   const vatLinePatterns = [
     /KDV\s*%?\s*1[:\s]+([\d]+[.,][\d]{2})/gi,
     /KDV\s*%?\s*8[:\s]+([\d]+[.,][\d]{2})/gi,
@@ -719,17 +790,18 @@ function extractVAT(text, total) {
     /KDV\s*%?\s*20[:\s]+([\d]+[.,][\d]{2})/gi
   ];
 
+  let totalVat = 0;
   for (const pattern of vatLinePatterns) {
     let match;
     while ((match = pattern.exec(text)) !== null) {
       const vat = parseFloat(match[1].replace(/\./g, '').replace(',', '.'));
-      if (!isNaN(vat) && vat > 0 && vat < total * 0.10) { // Her KDV oranı max %10
+      if (!isNaN(vat) && vat > 0 && (total === 0 || vat < total * 0.10)) {
         totalVat += vat;
       }
     }
   }
 
-  if (totalVat > 0 && totalVat < total * 0.30) {
+  if (totalVat > 0) {
     console.log('📊 KDV bulundu (çoklu oran toplamı):', totalVat);
     return totalVat;
   }
@@ -738,7 +810,7 @@ function extractVAT(text, total) {
   const generalVatMatch = text.match(/(?:TOPLAM\s*KDV|TOP\.?\s*KDV)[:\s]*([\d]+[.,][\d]{2})/i);
   if (generalVatMatch) {
     const vat = parseFloat(generalVatMatch[1].replace(/\./g, '').replace(',', '.'));
-    if (!isNaN(vat) && vat > 0 && vat < total * 0.30) {
+    if (!isNaN(vat) && vat > 0 && (total === 0 || vat < maxVat)) {
       console.log('📊 KDV bulundu (genel pattern):', vat);
       return vat;
     }
