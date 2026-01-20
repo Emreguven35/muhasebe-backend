@@ -757,27 +757,53 @@ function extractVAT(text, total) {
   // 1. "KDV" satırından sonraki değer (e-Fatura formatı)
   // Örnek: KDV\n454.55 veya TOPLAM KDV\n454.55
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].toUpperCase();
+    const line = lines[i];
     
-    // "TOPLAM KDV" satırı - aynı satırda değer olabilir
-    const toplamKdvMatch = lines[i].match(/TOPLAM\s*KDV[:\s]*([\d.,]+)/i);
-    if (toplamKdvMatch) {
-      const vat = parseNumber(toplamKdvMatch[1]);
-      if (!isNaN(vat) && vat > 0 && (total === 0 || (vat < maxVat))) {
-        console.log('📊 KDV bulundu (TOPLAM KDV aynı satır):', vat);
-        return vat;
+    // "TOPLAM KDV" ile aynı satırda veya yakınında değer olabilir
+    // Format: "TOPLAM KDV                    454.55" veya "TOPLAM KDV 454.55"
+    if (/TOPLAM\s*KDV/i.test(line)) {
+      // Aynı satırda sayı var mı?
+      const sameLineMatch = line.match(/TOPLAM\s*KDV[\s:]*([\d.,]+)/i);
+      if (sameLineMatch) {
+        const vat = parseNumber(sameLineMatch[1]);
+        if (!isNaN(vat) && vat > 0 && (total === 0 || vat < maxVat)) {
+          console.log('📊 KDV bulundu (TOPLAM KDV aynı satır):', vat);
+          return vat;
+        }
+      }
+      
+      // Satırın sonunda sayı var mı? (boşlukla ayrılmış)
+      const endMatch = line.match(/([\d.,]+)\s*$/);
+      if (endMatch) {
+        const vat = parseNumber(endMatch[1]);
+        if (!isNaN(vat) && vat > 0 && (total === 0 || vat < maxVat)) {
+          console.log('📊 KDV bulundu (TOPLAM KDV satır sonu):', vat);
+          return vat;
+        }
+      }
+      
+      // Sonraki satırlarda değer ara
+      for (let j = i + 1; j < Math.min(i + 3, lines.length); j++) {
+        const numMatch = lines[j].match(/^[*+]?([\d.,]+)(?:\s*₺|\s*TL)?$/);
+        if (numMatch) {
+          const vat = parseNumber(numMatch[1]);
+          if (!isNaN(vat) && vat > 0 && (total === 0 || vat < maxVat)) {
+            console.log('📊 KDV bulundu (TOPLAM KDV sonraki satır):', vat);
+            return vat;
+          }
+        }
       }
     }
     
-    // Sadece "KDV" veya "TOPLAM KDV" veya "TOPKDV" yazan satır
-    if (/^(KDV|TOPLAM\s*KDV|TOPKDV)$/i.test(lines[i])) {
+    // Sadece "KDV" veya "TOPKDV" yazan satır
+    if (/^(KDV|TOPKDV)$/i.test(line)) {
       // Sonraki satırlarda sayı ara
       for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
         const numMatch = lines[j].match(/^[*+]?([\d.,]+)(?:\s*₺|\s*TL)?$/);
         if (numMatch) {
           const vat = parseNumber(numMatch[1]);
           if (!isNaN(vat) && vat > 0 && (total === 0 || (vat < maxVat && vat > minVat))) {
-            console.log('📊 KDV bulundu (satır bazlı):', vat);
+            console.log('📊 KDV bulundu (KDV satır bazlı):', vat);
             return vat;
           }
         }
@@ -785,8 +811,8 @@ function extractVAT(text, total) {
     }
     
     // "KDV: 454.55" formatı (aynı satırda, TOPLAM KDV değil)
-    if (/^KDV[:\s]/i.test(lines[i]) && !/TOPLAM/i.test(lines[i])) {
-      const kdvSameLine = lines[i].match(/^KDV[:\s]*([\d.,]+)/i);
+    if (/^KDV[:\s]/i.test(line) && !/TOPLAM/i.test(line)) {
+      const kdvSameLine = line.match(/^KDV[:\s]*([\d.,]+)/i);
       if (kdvSameLine) {
         const vat = parseNumber(kdvSameLine[1]);
         if (!isNaN(vat) && vat > 0 && (total === 0 || (vat < maxVat && vat > minVat))) {
