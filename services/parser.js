@@ -177,8 +177,8 @@ function extractCompanyName(lines, text) {
     { pattern: /MİGROS|MIGROS/i, name: 'MİGROS' },
     { pattern: /CARREFOUR/i, name: 'CARREFOUR' },
     { pattern: /A101/i, name: 'A101' },
-    { pattern: /BİM |BIM /i, name: 'BİM' },
-    { pattern: /ŞOK |SOK /i, name: 'ŞOK' },
+    { pattern: /BİM\s|BIM\s/i, name: 'BİM' },
+    { pattern: /ŞOK\s|SOK\s/i, name: 'ŞOK' },
     { pattern: /OPET/i, name: 'OPET' },
     { pattern: /SHELL/i, name: 'SHELL' },
     { pattern: /BP\s/i, name: 'BP' },
@@ -198,9 +198,54 @@ function extractCompanyName(lines, text) {
     }
   }
 
-  // Şirket adı pattern'leri
+  // LTD, A.Ş., ŞTİ içeren satırı bul ve önceki satırlarla birleştir
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    // Bu satır şirket türü içeriyor mu?
+    if (/(?:LTD|A\.?Ş\.?|ŞTİ|STI|TİC|TIC|SAN)[\.\s]/i.test(line)) {
+      // Önceki satırları kontrol et ve birleştir
+      let companyParts = [];
+      
+      // Geriye doğru git, anlamlı satırları topla
+      for (let j = i; j >= Math.max(0, i - 3); j--) {
+        const prevLine = lines[j].trim();
+        
+        // Atlanacak satırlar
+        if (/^(TOPKDV|KDV|TOPLAM|NAKİT|NAKIT|E-?ARŞİV|E-?FATURA|\d+[.,]\d+|[*+#][\d.,]+)$/i.test(prevLine)) {
+          continue;
+        }
+        
+        // Çok kısa veya sadece sayı olan satırları atla
+        if (prevLine.length < 3 || /^\d+$/.test(prevLine)) {
+          continue;
+        }
+        
+        // Adres satırını atla
+        if (/MAH\.|CAD\.|SOK\.|NO:/i.test(prevLine)) {
+          continue;
+        }
+        
+        // Anlamlı bir firma adı parçası mı?
+        if (/[A-ZÇĞİÖŞÜa-zçğıöşü]{2,}/i.test(prevLine)) {
+          companyParts.unshift(prevLine);
+        }
+      }
+      
+      if (companyParts.length > 0) {
+        const companyName = companyParts.join(' ').trim();
+        // Çok uzunsa kısalt
+        if (companyName.length > 80) {
+          return companyName.substring(0, 80);
+        }
+        return companyName;
+      }
+    }
+  }
+
+  // Şirket adı pattern'leri (fallback)
   const companyPatterns = [
-    // LTD, A.Ş., vb. içeren satırlar
+    // LTD, A.Ş., vb. içeren satırlar - tek satırda
     /([A-ZÇĞİÖŞÜa-zçğıöşü0-9\s\.]+(?:LTD|A\.?Ş\.?|TİC|SAN|ŞTİ|STI)[^\n]*)/i,
     // ŞUBE içeren satırlar
     /([A-ZÇĞİÖŞÜ][A-ZÇĞİÖŞÜa-zçğıöşü0-9\s]+ŞUBE[SİI]?[^\n]*)/i
@@ -222,7 +267,8 @@ function extractCompanyName(lines, text) {
   const skipPatterns = [
     /^e-?arşiv/i, /^e-?fatura/i, /^fatura/i, /^fis$/i, /^fiş$/i,
     /^\d+$/, /^[0-9\s\-\.\:\/]+$/, /^\d{2}[\.\/-]\d{2}[\.\/-]\d{2,4}/,
-    /^\d{2}:\d{2}/, /^www\./i, /^http/i, /^tel:/i, /^\+90/
+    /^\d{2}:\d{2}/, /^www\./i, /^http/i, /^tel:/i, /^\+90/,
+    /^TOPKDV$/i, /^KDV$/i, /^TOPLAM$/i, /^NAKİT$/i, /^NAKIT$/i
   ];
 
   for (let i = 0; i < Math.min(8, lines.length); i++) {
@@ -295,6 +341,8 @@ function extractTaxNumber(text) {
     /(?:VD|V\.D\.?)[:\s\-]*[A-ZÇĞİÖŞÜa-zçğıöşü\s]+[:\s\-]*(\d{10,11})/i,
     /(\d{10,11})(?=\s*VD|\s*V\.D\.?)/i,
     /VKN\/TCKN[:\s]*(\d{10,11})/i,
+    // "Batman VD:4430473444" formatı - şehir adı + VD: + numara
+    /[A-ZÇĞİÖŞÜa-zçğıöşü]+\s+VD[:\s]*(\d{10,11})/i,
     /[-](\d{10,11})/
   ];
 
@@ -651,11 +699,12 @@ function extractTotal(text) {
   // 0. AKARYAKIT FİŞLERİ: # veya * ile başlayan tutarlardan EN BÜYÜĞÜ toplam
   // Shell: "#500,00" toplam, "*83,33" KDV
   // Esas Petrol: "*500,00" toplam, "#83,33" KDV
-  const isAkaryakit = /petrol|shell|opet|bp\s|total|benzin|motorin|akaryakıt|epdk/i.test(text);
+  // Güre Akaryakıt: "*400,00" toplam, "+66,67" KDV
+  const isAkaryakit = /petrol|shell|opet|bp\s|total|benzin|motorin|akaryakıt|akarya|epdk|pompa/i.test(text);
   if (isAkaryakit) {
     let maxTotal = 0;
     for (const line of lines) {
-      // # veya * ile başlayan tutarlar
+      // # veya * ile başlayan tutarlar (+ genelde KDV için kullanılır)
       const match = line.match(/^[#*]([\d.,]+)$/);
       if (match) {
         const amount = parseNumber(match[1]);
@@ -950,7 +999,7 @@ function extractVATDetailed(text, total) {
       }
     }
     
-    // Ayrı satırlarda: "KDV" veya "TOPKDV" sonra "*83,33" veya "#83,33"
+    // Ayrı satırlarda: "KDV" veya "TOPKDV" sonra "*83,33" veya "#83,33" veya "+66,67"
     if (/^(KDV|TOPKDV)$/i.test(line)) {
       // Sonraki satırlarda değer ara (2 satıra kadar bak)
       for (let j = i + 1; j < Math.min(i + 3, lines.length); j++) {
@@ -964,6 +1013,25 @@ function extractVATDetailed(text, total) {
           if (vatAmount > 0 && vatAmount < (total > 0 ? total * 0.30 : 10000)) {
             assignVatByRate(result, vatAmount, text, total);
             break;
+          }
+        }
+      }
+      
+      // TOPKDV'den ÖNCE de değer olabilir (OCR satırları karıştırdıysa)
+      // Örnek: "+66,67" satırı TOPKDV'den önce gelebilir
+      if (result.vat1 === 0 && result.vat10 === 0 && result.vat20 === 0) {
+        for (let j = i - 1; j >= Math.max(0, i - 3); j--) {
+          const prevLine = lines[j];
+          // Sayı olan satırları atla (matrah vs olabilir)
+          if (/^[\d.,]+$/.test(prevLine)) continue;
+          
+          const prevMatch = prevLine.match(/^[+]([\d.,]+)$/);
+          if (prevMatch) {
+            const vatAmount = parseNumber(prevMatch[1]);
+            if (vatAmount > 0 && vatAmount < (total > 0 ? total * 0.30 : 10000)) {
+              assignVatByRate(result, vatAmount, text, total);
+              break;
+            }
           }
         }
       }
