@@ -595,11 +595,40 @@ function parseNumber(str) {
 }
 
 // ==========================================
-// TOPLAM TUTAR ÇIKARMA - EN ÖNEMLİ! v3.0
+// TOPLAM TUTAR ÇIKARMA - EN ÖNEMLİ! v3.1
 // ==========================================
 function extractTotal(text) {
   const lines = text.split('\n').map(l => l.trim()).filter(l => l);
   
+  // 0. ÖNCELİKLİ: "Odenecek KDV Dahil Tutar" pattern'i (BİM fişleri)
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    if (/[OÖ]denecek\s*KDV\s*Dahil\s*Tutar/i.test(line)) {
+      // Aynı satırda değer var mı?
+      const sameLineMatch = line.match(/[*+]?([\d.,]+)\s*$/);
+      if (sameLineMatch) {
+        const total = parseNumber(sameLineMatch[1]);
+        if (total > 0 && total < 1000000) {
+          console.log('💵 Toplam bulundu (Odenecek KDV Dahil - aynı satır):', total);
+          return total;
+        }
+      }
+      
+      // Sonraki satırda değer ara
+      for (let j = i + 1; j < Math.min(i + 3, lines.length); j++) {
+        const numMatch = lines[j].match(/^[*+]?([\d.,]+)$/);
+        if (numMatch) {
+          const total = parseNumber(numMatch[1]);
+          if (total > 0 && total < 1000000) {
+            console.log('💵 Toplam bulundu (Odenecek KDV Dahil - sonraki satır):', total);
+            return total;
+          }
+        }
+      }
+    }
+  }
+
   // 1. Satır bazlı analiz - "TOPLAM TUTAR" veya "TOPLAM" satırından sonraki değer
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].toUpperCase();
@@ -805,7 +834,7 @@ function convertTurkishToNumber(text) {
 }
 
 // ==========================================
-// KDV ÇIKARMA - GELİŞTİRİLMİŞ v4.0
+// KDV ÇIKARMA - GELİŞTİRİLMİŞ v4.1
 // ==========================================
 function extractVAT(text, total) {
   console.log('🔍 KDV aranıyor, toplam tutar:', total);
@@ -816,6 +845,26 @@ function extractVAT(text, total) {
   
   const lines = text.split('\n').map(l => l.trim()).filter(l => l);
   
+  // 0. ÖNCELİKLİ: BİM tipi KDV tablosu - "%1. 472.77 *4.73" formatı
+  // KDV TUTAR sütunundaki değerleri topla
+  let bimVatTotal = 0;
+  for (const line of lines) {
+    // "%1. 472.77 *4.73 *477.50" veya "21. 472.77 *4.73" formatı
+    const bimMatch = line.match(/[%Z]?\d+[\.,]?\s+[\d.,]+\s+[*+]?([\d.,]+)\s+[*+]?[\d.,]+/);
+    if (bimMatch) {
+      const vatAmount = parseNumber(bimMatch[1]);
+      if (vatAmount > 0 && vatAmount < 1000) {
+        bimVatTotal += vatAmount;
+        console.log('📊 BİM KDV satırı bulundu:', vatAmount);
+      }
+    }
+  }
+  
+  if (bimVatTotal > 0) {
+    console.log('📊 KDV bulundu (BİM tablosu toplamı):', bimVatTotal);
+    return bimVatTotal;
+  }
+
   // 1. "TOPLAM KDV" pattern'i - aynı satırda veya yakınında
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
