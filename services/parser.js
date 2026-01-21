@@ -1001,13 +1001,16 @@ function extractVATDetailed(text, total) {
     
     // Ayrı satırlarda: "KDV" veya "TOPKDV" sonra "*83,33" veya "#83,33" veya "+66,67"
     if (/^(KDV|TOPKDV)$/i.test(line)) {
-      // Sonraki satırlarda değer ara (2 satıra kadar bak)
-      for (let j = i + 1; j < Math.min(i + 3, lines.length); j++) {
+      // Sonraki satırlarda değer ara (5 satıra kadar bak)
+      for (let j = i + 1; j < Math.min(i + 6, lines.length); j++) {
         const nextLine = lines[j];
         // TOPLAM, NAKIT gibi kelimeleri atla
-        if (/^(TOPLAM|NAKIT|KREDİ|KREDI)$/i.test(nextLine)) continue;
+        if (/^(TOPLAM|NAKIT|KREDİ|KREDI|EKU|AFAU)$/i.test(nextLine)) continue;
+        // Sadece * ile başlayan tutarları atla (toplam olabilir)
+        if (/^\*[\d.,]+$/.test(nextLine)) continue;
         
-        const nextMatch = nextLine.match(/^[#*+]?\s*([\d.,]+)$/);
+        // + veya # ile başlayan KDV tutarı
+        const nextMatch = nextLine.match(/^[+#]([\d.,]+)$/);
         if (nextMatch) {
           const vatAmount = parseNumber(nextMatch[1]);
           if (vatAmount > 0 && vatAmount < (total > 0 ? total * 0.30 : 10000)) {
