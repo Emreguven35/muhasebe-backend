@@ -1001,21 +1001,46 @@ function extractVATDetailed(text, total) {
     
     // Ayrı satırlarda: "KDV" veya "TOPKDV" sonra "*83,33" veya "#83,33" veya "+66,67"
     if (/^(KDV|TOPKDV)$/i.test(line)) {
-      // Sonraki satırlarda değer ara (5 satıra kadar bak)
-      for (let j = i + 1; j < Math.min(i + 6, lines.length); j++) {
+      // Sonraki satırlarda değer ara (6 satıra kadar bak)
+      for (let j = i + 1; j < Math.min(i + 7, lines.length); j++) {
         const nextLine = lines[j];
         // TOPLAM, NAKIT gibi kelimeleri atla
-        if (/^(TOPLAM|NAKIT|KREDİ|KREDI|EKU|AFAU)$/i.test(nextLine)) continue;
-        // Sadece * ile başlayan tutarları atla (toplam olabilir)
-        if (/^\*[\d.,]+$/.test(nextLine)) continue;
+        if (/^(TOPLAM|NAKIT|KREDİ|KREDI|EKU|AFAU|K\.KARTI|İYİ)$/i.test(nextLine)) continue;
         
         // + veya # ile başlayan KDV tutarı
-        const nextMatch = nextLine.match(/^[+#]([\d.,]+)$/);
-        if (nextMatch) {
-          const vatAmount = parseNumber(nextMatch[1]);
+        const plusHashMatch = nextLine.match(/^[+#]([\d.,]+)$/);
+        if (plusHashMatch) {
+          const vatAmount = parseNumber(plusHashMatch[1]);
           if (vatAmount > 0 && vatAmount < (total > 0 ? total * 0.30 : 10000)) {
             assignVatByRate(result, vatAmount, text, total);
             break;
+          }
+        }
+        
+        // * ile başlayan tutar - KDV olabilir mi kontrol et
+        const starMatch = nextLine.match(/^\*([\d.,]+)$/);
+        if (starMatch) {
+          const amount = parseNumber(starMatch[1]);
+          // Eğer bu tutar toplamdan küçükse ve mantıklı bir KDV oranına uyuyorsa, KDV'dir
+          if (amount > 0 && total > 0 && amount < total) {
+            // %20 KDV kontrolü: KDV = Toplam * 20 / 120 ≈ Toplam * 0.1667
+            const expected20 = (total * 20) / 120;
+            if (Math.abs(amount - expected20) < expected20 * 0.05) {
+              assignVatByRate(result, amount, text, total);
+              break;
+            }
+            // %10 KDV kontrolü
+            const expected10 = (total * 10) / 110;
+            if (Math.abs(amount - expected10) < expected10 * 0.05) {
+              assignVatByRate(result, amount, text, total);
+              break;
+            }
+            // %1 KDV kontrolü
+            const expected1 = (total * 1) / 101;
+            if (Math.abs(amount - expected1) < expected1 * 0.05) {
+              assignVatByRate(result, amount, text, total);
+              break;
+            }
           }
         }
       }
