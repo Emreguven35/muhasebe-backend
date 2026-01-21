@@ -1,6 +1,6 @@
 // backend/services/parser.js
 // ==========================================
-// FİŞ PARSE FONKSİYONU - GELİŞMİŞ VERSİYON v2.1
+// FİŞ PARSE FONKSİYONU - GELİŞMİŞ VERSİYON v2.2
 // ==========================================
 
 function parseReceipt(text) {
@@ -100,7 +100,8 @@ function detectCategory(text) {
       'petrol', 'opet', 'shell', 'bp ', 'total', 'benzin', 'motorin', 'dizel',
       'lpg', 'akaryakıt', 'akarya', 'fuel', 'pompa', 'litre', 'mazot', 'eurodizel',
       'ipragaz', 'petrol ofisi', 'aytemiz', 'kalyon', 'po ', 'm-oil', 'lukoil',
-      'türkiye petrolleri', 'turkiye petrolleri', 'tüpraş', 'tupras'
+      'türkiye petrolleri', 'turkiye petrolleri', 'tüpraş', 'tupras', 'kurşunsuz',
+      'kursunsuz', 'v-max', 'vmax', 'v/max', 'istasyon', 'epdk'
     ],
     'Yemek': [
       'restoran', 'restaurant', 'kafe', 'cafe', 'kahve', 'coffee', 'pizza',
@@ -150,8 +151,8 @@ function detectCategory(text) {
     ]
   };
 
-  // Öncelik sırasına göre kontrol et (Market önce, çünkü en yaygın)
-  const priorityOrder = ['Market', 'Akaryakıt', 'Yemek', 'Ulaşım', 'Sağlık', 'Giyim', 'Elektronik', 'Kırtasiye', 'Konaklama', 'Hizmet', 'Eğlence'];
+  // Öncelik sırasına göre kontrol et (Akaryakıt önce, çünkü PETROL kelimesi market fişlerinde geçmez)
+  const priorityOrder = ['Akaryakıt', 'Market', 'Yemek', 'Ulaşım', 'Sağlık', 'Giyim', 'Elektronik', 'Kırtasiye', 'Konaklama', 'Hizmet', 'Eğlence'];
   
   for (const category of priorityOrder) {
     const keywords = categories[category];
@@ -293,6 +294,7 @@ function extractTaxNumber(text) {
     /(?:VERGİ\s*NO|V\.?NO|VNO|VERGI\s*NUMARASI|VKN|TCKN)[:\s\-]*(\d{10,11})/i,
     /(?:VD|V\.D\.?)[:\s\-]*[A-ZÇĞİÖŞÜa-zçğıöşü\s]+[:\s\-]*(\d{10,11})/i,
     /(\d{10,11})(?=\s*VD|\s*V\.D\.?)/i,
+    /VKN\/TCKN[:\s]*(\d{10,11})/i,
     /[-](\d{10,11})/
   ];
 
@@ -309,9 +311,11 @@ function extractTaxNumber(text) {
 }
 
 // ==========================================
-// TARİH ÇIKARMA - GELİŞTİRİLMİŞ
+// TARİH ÇIKARMA - GELİŞTİRİLMİŞ v2
 // ==========================================
 function extractDate(text) {
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+  
   // 1. Önce YYYY-MM-DD formatını ara (e-Fatura formatı)
   const isoPattern = /(?:TARİH|TARIH|DATE)\s*[:\s]\s*(\d{4})[\/\.\-](\d{2})[\/\.\-](\d{2})/i;
   const isoMatch = text.match(isoPattern);
@@ -370,9 +374,46 @@ function extractDate(text) {
     }
   }
 
-  // 4. Genel tarih pattern'leri
+  // 4. TEK BAŞINA SATIR: DD-MM-YYYY formatı (tire ile ayrılmış, kendi satırında)
+  for (const line of lines) {
+    // Sadece tarih olan satır: 14-12-2025 veya 14.12.2025 veya 14/12/2025
+    const standaloneMatch = line.match(/^(\d{2})[\/\.\-](\d{2})[\/\.\-](\d{4})$/);
+    if (standaloneMatch) {
+      const day = standaloneMatch[1];
+      const month = standaloneMatch[2];
+      const year = standaloneMatch[3];
+      const dayNum = parseInt(day);
+      const monthNum = parseInt(month);
+      const yearNum = parseInt(year);
+      
+      if (yearNum >= 2020 && yearNum <= 2030 && dayNum >= 1 && dayNum <= 31 && monthNum >= 1 && monthNum <= 12) {
+        console.log('📅 Tarih bulundu (standalone DD-MM-YYYY):', `${year}-${month}-${day}`);
+        return `${year}-${month}-${day}`;
+      }
+    }
+    
+    // 2 haneli yıl: 14-12-25
+    const standaloneMatch2 = line.match(/^(\d{2})[\/\.\-](\d{2})[\/\.\-](\d{2})$/);
+    if (standaloneMatch2) {
+      const day = standaloneMatch2[1];
+      const month = standaloneMatch2[2];
+      let year = standaloneMatch2[3];
+      const dayNum = parseInt(day);
+      const monthNum = parseInt(month);
+      
+      // 2 haneli yılı 4 haneliye çevir
+      year = '20' + year;
+      
+      if (dayNum >= 1 && dayNum <= 31 && monthNum >= 1 && monthNum <= 12) {
+        console.log('📅 Tarih bulundu (standalone DD-MM-YY):', `${year}-${month}-${day}`);
+        return `${year}-${month}-${day}`;
+      }
+    }
+  }
+
+  // 5. Genel tarih pattern'leri (metin içinde)
   const patterns = [
-    // DD/MM/YYYY veya DD.MM.YYYY
+    // DD/MM/YYYY veya DD.MM.YYYY veya DD-MM-YYYY
     /(\d{2})[\/\.\-](\d{2})[\/\.\-](\d{4})/,
     // DD/MM/YY
     /(\d{2})[\/\.\-](\d{2})[\/\.\-](\d{2})(?!\d)/
@@ -452,7 +493,7 @@ function extractReceiptNumber(text, lines) {
       }
     }
     
-    // Aynı satırda "FİŞ NO : 00023" veya "FİŞ NO: 00023"
+    // Aynı satırda "FİŞ NO : 00023" veya "FİŞ NO:0017" formatı
     const sameLineMatch = line.match(/F[İI]?[SŞ]\s*NO\s*:?\s*(\d{3,10})/i);
     if (sameLineMatch) {
       console.log('✅ Fiş no bulundu (aynı satır):', sameLineMatch[1]);
@@ -841,7 +882,7 @@ function convertTurkishToNumber(text) {
 }
 
 // ==========================================
-// KDV ÇIKARMA - DETAYLI (%1, %10, %20 ayrı ayrı)
+// KDV ÇIKARMA - DETAYLI (%1, %10, %20 ayrı ayrı) v2
 // ==========================================
 function extractVATDetailed(text, total) {
   console.log('🔍 KDV detaylı aranıyor, toplam tutar:', total);
@@ -854,6 +895,83 @@ function extractVATDetailed(text, total) {
   };
   
   const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+  
+  // 0. ÖNCELİKLİ: Fişte açıkça yazılmış KDV tutarı
+  // Format 1: "KDV #83,33" veya "KDV *83.33" (aynı satırda)
+  // Format 2: "KDV" bir satır, "#83,33" sonraki satırda
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    // Aynı satırda: "KDV #83,33" veya "KDV *83.33"
+    const kdvDirectMatch = line.match(/^KDV\s*[#*:]\s*([\d.,]+)/i);
+    if (kdvDirectMatch) {
+      const vatAmount = parseNumber(kdvDirectMatch[1]);
+      if (vatAmount > 0 && vatAmount < (total > 0 ? total * 0.30 : 10000)) {
+        assignVatByRate(result, vatAmount, text, total);
+      }
+    }
+    
+    // Ayrı satırlarda: "KDV" sonra "#83,33"
+    if (/^KDV$/i.test(line)) {
+      // Sonraki satırda değer ara
+      if (i + 1 < lines.length) {
+        const nextLine = lines[i + 1];
+        const nextMatch = nextLine.match(/^[#*+]?\s*([\d.,]+)$/);
+        if (nextMatch) {
+          const vatAmount = parseNumber(nextMatch[1]);
+          if (vatAmount > 0 && vatAmount < (total > 0 ? total * 0.30 : 10000)) {
+            assignVatByRate(result, vatAmount, text, total);
+          }
+        }
+      }
+    }
+  }
+  
+  // Helper function için inline tanım
+  function assignVatByRate(result, vatAmount, text, total) {
+    // Hangi orana ait olduğunu belirle - fişte %20 yazıyorsa
+    if (/%20/.test(text)) {
+      result.vat20 = vatAmount;
+      console.log('📊 KDV bulundu (direkt, %20):', vatAmount);
+    } else if (/%18/.test(text)) {
+      result.vat20 = vatAmount;
+      console.log('📊 KDV bulundu (direkt, %18):', vatAmount);
+    } else if (/%10/.test(text)) {
+      result.vat10 = vatAmount;
+      console.log('📊 KDV bulundu (direkt, %10):', vatAmount);
+    } else if (/%8/.test(text)) {
+      result.vat10 = vatAmount;
+      console.log('📊 KDV bulundu (direkt, %8):', vatAmount);
+    } else if (/%1\b/.test(text)) {
+      result.vat1 = vatAmount;
+      console.log('📊 KDV bulundu (direkt, %1):', vatAmount);
+    } else {
+      // Oran belli değilse hesapla
+      if (total > 0) {
+        const rate = (vatAmount / (total - vatAmount)) * 100;
+        if (rate < 5) {
+          result.vat1 = vatAmount;
+        } else if (rate < 15) {
+          result.vat10 = vatAmount;
+        } else {
+          result.vat20 = vatAmount;
+        }
+        console.log('📊 KDV bulundu (direkt, hesaplanan oran ~%' + Math.round(rate) + '):', vatAmount);
+      } else {
+        result.vat20 = vatAmount; // Varsayılan
+      }
+    }
+  }
+  
+  // Eğer direkt KDV bulunduysa, toplam hesapla ve dön
+  if (result.vat1 > 0 || result.vat10 > 0 || result.vat20 > 0) {
+    result.total = result.vat1 + result.vat10 + result.vat20;
+    result.vat1 = Math.round(result.vat1 * 100) / 100;
+    result.vat10 = Math.round(result.vat10 * 100) / 100;
+    result.vat20 = Math.round(result.vat20 * 100) / 100;
+    result.total = Math.round(result.total * 100) / 100;
+    return result;
+  }
   
   // KDV tablosu var mı kontrol et (MATRAH, KDV TUTAR gibi başlıklar)
   const hasKdvTable = /MATRAH|KDV\s*TUTAR|KDV\s*DAHİL|KDV\s*DAHIL/i.test(text);
@@ -1065,7 +1183,7 @@ function extractVATDetailed(text, total) {
     }
   }
   
-  // 4. Akıllı analiz - toplam biliniyorsa KDV oranını tahmin et
+  // 4. Akıllı analiz - toplam biliniyorsa ve hala KDV bulunamadıysa
   if (result.vat1 === 0 && result.vat10 === 0 && result.vat20 === 0 && total > 0) {
     const allNumbers = text.match(/[\d.,]+/g) || [];
     
