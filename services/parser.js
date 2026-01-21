@@ -648,7 +648,29 @@ function parseNumber(str) {
 function extractTotal(text) {
   const lines = text.split('\n').map(l => l.trim()).filter(l => l);
   
-  // 0. ÖNCELİKLİ: "Odenecek KDV Dahil Tutar" pattern'i (BİM fişleri)
+  // 0. AKARYAKIT FİŞLERİ: # veya * ile başlayan tutarlardan EN BÜYÜĞÜ toplam
+  // Shell: "#500,00" toplam, "*83,33" KDV
+  // Esas Petrol: "*500,00" toplam, "#83,33" KDV
+  const isAkaryakit = /petrol|shell|opet|bp\s|total|benzin|motorin|akaryakıt|epdk/i.test(text);
+  if (isAkaryakit) {
+    let maxTotal = 0;
+    for (const line of lines) {
+      // # veya * ile başlayan tutarlar
+      const match = line.match(/^[#*]([\d.,]+)$/);
+      if (match) {
+        const amount = parseNumber(match[1]);
+        if (amount > maxTotal && amount < 1000000) {
+          maxTotal = amount;
+        }
+      }
+    }
+    if (maxTotal > 0) {
+      console.log('💵 Toplam bulundu (akaryakıt max tutar):', maxTotal);
+      return maxTotal;
+    }
+  }
+  
+  // 0b. ÖNCELİKLİ: "Odenecek KDV Dahil Tutar" pattern'i (BİM fişleri)
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     
@@ -677,7 +699,7 @@ function extractTotal(text) {
     }
   }
 
-  // 1. Satır bazlı analiz - "TOPLAM TUTAR" veya "TOPLAM" satırından sonraki değer
+  // 1. Satır bazlı analiz - "TOPLAM TUTAR" veya "TOPLAM" satırından sonraki/önceki değer
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].toUpperCase();
     
@@ -686,11 +708,27 @@ function extractTotal(text) {
         /^TOPLAM$/i.test(line)) {
       // Sonraki satırlarda sayı ara
       for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
-        const numMatch = lines[j].match(/^[*+]?([\d.,]+)(?:\s*₺|\s*TL)?$/);
+        const numMatch = lines[j].match(/^[*+#]?([\d.,]+)(?:\s*₺|\s*TL)?$/);
         if (numMatch) {
           const total = parseNumber(numMatch[1]);
           if (!isNaN(total) && total > 0 && total < 1000000) {
-            console.log('💵 Toplam bulundu (satır bazlı):', total);
+            console.log('💵 Toplam bulundu (satır bazlı - sonra):', total);
+            return total;
+          }
+        }
+      }
+      
+      // ÖNCEKİ satırlarda sayı ara (Shell fişlerinde TOPLAM'dan önce tutar var)
+      for (let j = i - 1; j >= Math.max(0, i - 4); j--) {
+        const prevLine = lines[j];
+        // TOPKDV veya KDV satırını atla
+        if (/TOPKDV|KDV/i.test(prevLine)) continue;
+        // # veya * ile başlayan tutar satırı
+        const numMatch = prevLine.match(/^[#*+]([\d.,]+)$/);
+        if (numMatch) {
+          const total = parseNumber(numMatch[1]);
+          if (!isNaN(total) && total > 0 && total < 1000000) {
+            console.log('💵 Toplam bulundu (satır bazlı - önce):', total);
             return total;
           }
         }
@@ -899,6 +937,7 @@ function extractVATDetailed(text, total) {
   // 0. ÖNCELİKLİ: Fişte açıkça yazılmış KDV tutarı
   // Format 1: "KDV #83,33" veya "KDV *83.33" (aynı satırda)
   // Format 2: "KDV" bir satır, "#83,33" sonraki satırda
+  // Format 3: "TOPKDV" bir satır, "*83,33" sonraki satırda
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     
@@ -911,16 +950,20 @@ function extractVATDetailed(text, total) {
       }
     }
     
-    // Ayrı satırlarda: "KDV" sonra "#83,33"
-    if (/^KDV$/i.test(line)) {
-      // Sonraki satırda değer ara
-      if (i + 1 < lines.length) {
-        const nextLine = lines[i + 1];
+    // Ayrı satırlarda: "KDV" veya "TOPKDV" sonra "*83,33" veya "#83,33"
+    if (/^(KDV|TOPKDV)$/i.test(line)) {
+      // Sonraki satırlarda değer ara (2 satıra kadar bak)
+      for (let j = i + 1; j < Math.min(i + 3, lines.length); j++) {
+        const nextLine = lines[j];
+        // TOPLAM, NAKIT gibi kelimeleri atla
+        if (/^(TOPLAM|NAKIT|KREDİ|KREDI)$/i.test(nextLine)) continue;
+        
         const nextMatch = nextLine.match(/^[#*+]?\s*([\d.,]+)$/);
         if (nextMatch) {
           const vatAmount = parseNumber(nextMatch[1]);
           if (vatAmount > 0 && vatAmount < (total > 0 ? total * 0.30 : 10000)) {
             assignVatByRate(result, vatAmount, text, total);
+            break;
           }
         }
       }
