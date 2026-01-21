@@ -84,19 +84,6 @@ router.get('/stats', authenticateToken, async (req, res) => {
       [userId]
     );
 
-    // Kategori bazlı dağılım
-    const categoryResult = await pool.query(
-      `SELECT 
-        category,
-        COUNT(*) as count,
-        COALESCE(SUM(total), 0) as amount
-       FROM receipts 
-       WHERE user_id = $1 
-       GROUP BY category
-       ORDER BY amount DESC`,
-      [userId]
-    );
-
     res.json({
       totalReceipts: parseInt(receiptsResult.rows[0].total_count),
       totalAmount: parseFloat(receiptsResult.rows[0].total_amount),
@@ -105,8 +92,7 @@ router.get('/stats', authenticateToken, async (req, res) => {
       totalVat10: parseFloat(receiptsResult.rows[0].total_vat10),
       totalVat20: parseFloat(receiptsResult.rows[0].total_vat20),
       monthlyReceipts: parseInt(monthlyResult.rows[0].monthly_count),
-      monthlyAmount: parseFloat(monthlyResult.rows[0].monthly_amount),
-      categoryBreakdown: categoryResult.rows
+      monthlyAmount: parseFloat(monthlyResult.rows[0].monthly_amount)
     });
 
   } catch (error) {
@@ -142,12 +128,11 @@ router.get('/export', authenticateToken, async (req, res) => {
       properties: { tabColor: { argb: '4F81BD' } }
     });
 
-    // Sütun tanımları - KDV'ler ayrı ayrı
+    // Sütun tanımları - Kategori kaldırıldı
     worksheet.columns = [
       { header: 'Tarih', key: 'date', width: 12 },
       { header: 'Firma', key: 'company_name', width: 30 },
       { header: 'Fiş No', key: 'receipt_number', width: 18 },
-      { header: 'Kategori', key: 'category', width: 12 },
       { header: 'Toplam (₺)', key: 'total', width: 13 },
       { header: 'KDV %1 (₺)', key: 'vat1', width: 12 },
       { header: 'KDV %10 (₺)', key: 'vat10', width: 12 },
@@ -167,13 +152,12 @@ router.get('/export', authenticateToken, async (req, res) => {
     headerRow.alignment = { horizontal: 'center', vertical: 'middle' };
     headerRow.height = 25;
 
-    // Verileri ekle
+    // Verileri ekle - Kategori kaldırıldı
     receipts.forEach((receipt, index) => {
       const row = worksheet.addRow({
         date: receipt.date ? new Date(receipt.date).toLocaleDateString('tr-TR') : '-',
         company_name: receipt.company_name || '-',
         receipt_number: receipt.receipt_number || '-',
-        category: receipt.category || '-',
         total: parseFloat(receipt.total) || 0,
         vat1: parseFloat(receipt.vat1) || 0,
         vat10: parseFloat(receipt.vat10) || 0,
@@ -201,12 +185,11 @@ router.get('/export', authenticateToken, async (req, res) => {
     worksheet.getColumn('vat20').numFmt = '#,##0.00 ₺';
     worksheet.getColumn('vat').numFmt = '#,##0.00 ₺';
 
-    // Toplam satırı
+    // Toplam satırı - Kategori kaldırıldı
     const totalRow = worksheet.addRow({
       date: '',
       company_name: 'TOPLAM',
       receipt_number: `${receipts.length} Fiş`,
-      category: '',
       total: receipts.reduce((sum, r) => sum + (parseFloat(r.total) || 0), 0),
       vat1: receipts.reduce((sum, r) => sum + (parseFloat(r.vat1) || 0), 0),
       vat10: receipts.reduce((sum, r) => sum + (parseFloat(r.vat10) || 0), 0),
@@ -234,10 +217,10 @@ router.get('/export', authenticateToken, async (req, res) => {
       });
     });
 
-    // Auto filter
+    // Auto filter - I sütununa kadar (9 sütun)
     worksheet.autoFilter = {
       from: 'A1',
-      to: `J${receipts.length + 1}`
+      to: `I${receipts.length + 1}`
     };
 
     // Freeze header
@@ -367,15 +350,18 @@ router.put('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.id;
-    const { company_name, date, receipt_number, category, total, vat, vat1, vat10, vat20 } = req.body;
+    const { company_name, date, receipt_number, total, vat1, vat10, vat20 } = req.body;
+    
+    // Toplam KDV'yi hesapla
+    const totalVat = (parseFloat(vat1) || 0) + (parseFloat(vat10) || 0) + (parseFloat(vat20) || 0);
 
     const result = await pool.query(
       `UPDATE receipts 
-       SET company_name = $1, date = $2, receipt_number = $3, category = $4, 
-           total = $5, vat = $6, vat1 = $7, vat10 = $8, vat20 = $9
-       WHERE id = $10 AND user_id = $11
+       SET company_name = $1, date = $2, receipt_number = $3, 
+           total = $4, vat = $5, vat1 = $6, vat10 = $7, vat20 = $8
+       WHERE id = $9 AND user_id = $10
        RETURNING *`,
-      [company_name, date, receipt_number, category, total, vat, vat1 || 0, vat10 || 0, vat20 || 0, id, userId]
+      [company_name, date, receipt_number, total, totalVat, vat1 || 0, vat10 || 0, vat20 || 0, id, userId]
     );
 
     if (result.rows.length === 0) {
