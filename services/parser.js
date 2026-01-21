@@ -1020,14 +1020,13 @@ function extractVATDetailed(text, total) {
   const hasKdvTable = /MATRAH|KDV\s*TUTAR|KDV\s*DAHİL|KDV\s*DAHIL/i.test(text);
   
   // 1. BİM/A101 tipi KDV tablosu - Tek satırda: "%1. 472.77 *4.73 *477.50" formatı
+  // OCR hataları: "%1" -> "21.", "31.", "Z1" | "%20" -> "120", "Z20"
   if (hasKdvTable) {
     for (const line of lines) {
-      // Satır % veya rakamla başlamalı (KDV oranı satırı)
-      // OCR bazen %1'i "31." veya "Z1" olarak okuyabilir
-      
-      // %1 KDV satırı - tek satırda tüm değerler
-      if (/^[%Z]?1[\.,\s]/.test(line) && !/^[%Z]?10/.test(line) && !/^[%Z]?18/.test(line) && !/^[%Z]?20/.test(line)) {
-        const match = line.match(/^[%Z]?1[\.,]?\s+([\d.,]+)\s+[*+]?([\d.,]+)/);
+      // %1 KDV satırı - OCR "21." veya "31." veya "Z1" olarak okuyabilir
+      // Format: "21. 472.77 *4.73 +477.50" veya "%1 472.77 *4.73 +477.50"
+      if (/^[%Z23]?1[\.,]?\s+[\d.,]+\s+[*+]?[\d.,]+/.test(line) && !/^[%Z]?10/.test(line) && !/^[%Z]?18/.test(line) && !/^1[28]0/.test(line)) {
+        const match = line.match(/^[%Z23]?1[\.,]?\s+([\d.,]+)\s+[*+]?([\d.,]+)\s+[*+]?([\d.,]+)/);
         if (match) {
           const vatAmount = parseNumber(match[2]);
           if (vatAmount > 0 && vatAmount < (total > 0 ? total * 0.05 : 1000)) {
@@ -1037,8 +1036,8 @@ function extractVATDetailed(text, total) {
         }
       }
       
-      // %8 KDV satırı
-      if (/^[%Z]?8[\.,\s]/.test(line) && !/^[%Z]?18/.test(line)) {
+      // %8 KDV satırı - OCR "8" veya "Z8" olarak okuyabilir
+      if (/^[%Z]?8[\.,\s]/.test(line) && !/^[%Z]?18/.test(line) && !/^180/.test(line)) {
         const match = line.match(/^[%Z]?8[\.,]?\s+([\d.,]+)\s+[*+]?([\d.,]+)/);
         if (match) {
           const vatAmount = parseNumber(match[2]);
@@ -1049,9 +1048,9 @@ function extractVATDetailed(text, total) {
         }
       }
       
-      // %10 KDV satırı
-      if (/^[%Z]?10[\.,\s]/.test(line)) {
-        const match = line.match(/^[%Z]?10[\.,]?\s+([\d.,]+)\s+[*+]?([\d.,]+)/);
+      // %10 KDV satırı - OCR "10" veya "110" olarak okuyabilir
+      if (/^[%Z]?1?10[\.,\s]/.test(line) && !/^120/.test(line)) {
+        const match = line.match(/^[%Z]?1?10[\.,]?\s+([\d.,]+)\s+[*+]?([\d.,]+)/);
         if (match) {
           const vatAmount = parseNumber(match[2]);
           if (vatAmount > 0 && vatAmount < (total > 0 ? total * 0.15 : 1000)) {
@@ -1061,9 +1060,9 @@ function extractVATDetailed(text, total) {
         }
       }
       
-      // %18 KDV satırı
-      if (/^[%Z]?18[\.,\s]/.test(line)) {
-        const match = line.match(/^[%Z]?18[\.,]?\s+([\d.,]+)\s+[*+]?([\d.,]+)/);
+      // %18 KDV satırı - OCR "18" veya "118" veya "180" olarak okuyabilir
+      if (/^[%Z]?1?18[\.,\s]/.test(line) || /^180[\.,\s]/.test(line)) {
+        const match = line.match(/^[%Z]?1?180?[\.,]?\s+([\d.,]+)\s+[*+]?([\d.,]+)/);
         if (match) {
           const vatAmount = parseNumber(match[2]);
           if (vatAmount > 0 && vatAmount < (total > 0 ? total * 0.25 : 1000)) {
@@ -1073,9 +1072,9 @@ function extractVATDetailed(text, total) {
         }
       }
       
-      // %20 KDV satırı
-      if (/^[%Z]?20[\.,\s]/.test(line)) {
-        const match = line.match(/^[%Z]?20[\.,]?\s+([\d.,]+)\s+[*+]?([\d.,]+)/);
+      // %20 KDV satırı - OCR "20" veya "120" veya "Z20" olarak okuyabilir
+      if (/^[%Z]?1?20[\.,\s]/.test(line) || /^120[\s]/.test(line)) {
+        const match = line.match(/^[%Z]?1?20[\.,]?\s+([\d.,]+)\s+[*+]?([\d.,]+)/);
         if (match) {
           const vatAmount = parseNumber(match[2]);
           if (vatAmount > 0 && vatAmount < (total > 0 ? total * 0.25 : 1000)) {
@@ -1087,46 +1086,35 @@ function extractVATDetailed(text, total) {
     }
     
     // 1b. OCR satırları ayırdıysa - ardışık satırlardan KDV değerlerini topla
-    // Format: "31. 472.77" sonra "*4.73" ayrı satırda
+    // BİM formatı: Her değer ayrı satırda
+    // Satır 1: "21." (oran - OCR hatası, aslında %1)
+    // Satır 2: "472.77" (matrah)
+    // Satır 3: "*4.73" (KDV tutarı)
+    // Satır 4: "+477.50" (KDV dahil)
     if (result.vat1 === 0 && result.vat10 === 0 && result.vat20 === 0) {
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         
-        // "%1" veya "31." (OCR hatası) veya "Z1" ile başlayan MATRAH satırı
-        // Sonraki satırda KDV tutarı olmalı
-        if (/^[%Z3]?1[\.,]?\s+[\d.,]+$/.test(line) && !/^[%Z]?10/.test(line)) {
-          // Sonraki satır KDV tutarı mı?
-          if (i + 1 < lines.length) {
-            const nextLine = lines[i + 1];
-            const kdvMatch = nextLine.match(/^[*+]?([\d.,]+)$/);
+        // %1 oran satırı: "21." veya "%1" veya "31." veya "1."
+        if (/^[%23]?1\.?$/.test(line) || /^21\.?$/.test(line) || /^31\.?$/.test(line)) {
+          // Sonraki 3 satırda matrah, kdv tutarı, kdv dahil olmalı
+          if (i + 2 < lines.length) {
+            // i+1 = matrah, i+2 = KDV tutarı
+            const kdvLine = lines[i + 2];
+            const kdvMatch = kdvLine.match(/^[*+]?([\d.,]+)$/);
             if (kdvMatch) {
               const vatAmount = parseNumber(kdvMatch[1]);
               if (vatAmount > 0 && vatAmount < (total > 0 ? total * 0.05 : 100)) {
                 result.vat1 += vatAmount;
-                console.log('📊 %1 KDV bulundu (ayrı satır):', vatAmount);
+                console.log('📊 %1 KDV bulundu (çok satırlı):', vatAmount);
               }
             }
           }
         }
         
-        // "%20" veya "20" ile başlayan MATRAH satırı
-        if (/^[%Z]?20[\.,]?\s+[\d.,]+$/.test(line)) {
-          if (i + 1 < lines.length) {
-            const nextLine = lines[i + 1];
-            const kdvMatch = nextLine.match(/^[*+]?([\d.,]+)$/);
-            if (kdvMatch) {
-              const vatAmount = parseNumber(kdvMatch[1]);
-              if (vatAmount > 0 && vatAmount < (total > 0 ? total * 0.25 : 100)) {
-                result.vat20 += vatAmount;
-                console.log('📊 %20 KDV bulundu (ayrı satır):', vatAmount);
-              }
-            }
-          }
-        }
-        
-        // "20" tek başına bir satır, sonraki satır matrah, ondan sonraki KDV
-        if (/^20$/.test(line)) {
-          // i+1 = matrah satırı, i+2 = KDV tutarı
+        // %20 oran satırı: "120" veya "%20" veya "20"
+        if (/^1?20\.?$/.test(line) || /^%20\.?$/.test(line) || /^120$/.test(line)) {
+          // Sonraki 3 satırda matrah, kdv tutarı, kdv dahil olmalı
           if (i + 2 < lines.length) {
             const kdvLine = lines[i + 2];
             const kdvMatch = kdvLine.match(/^[*+]?([\d.,]+)$/);
@@ -1134,22 +1122,37 @@ function extractVATDetailed(text, total) {
               const vatAmount = parseNumber(kdvMatch[1]);
               if (vatAmount > 0 && vatAmount < (total > 0 ? total * 0.25 : 100)) {
                 result.vat20 += vatAmount;
-                console.log('📊 %20 KDV bulundu (3 satır format):', vatAmount);
+                console.log('📊 %20 KDV bulundu (çok satırlı):', vatAmount);
               }
             }
           }
         }
         
-        // "%10" ile başlayan MATRAH satırı
-        if (/^[%Z]?10[\.,]?\s+[\d.,]+$/.test(line)) {
-          if (i + 1 < lines.length) {
-            const nextLine = lines[i + 1];
-            const kdvMatch = nextLine.match(/^[*+]?([\d.,]+)$/);
+        // %10 oran satırı: "110" veya "%10" veya "10"
+        if (/^1?10\.?$/.test(line) || /^%10\.?$/.test(line) || /^110$/.test(line)) {
+          if (i + 2 < lines.length) {
+            const kdvLine = lines[i + 2];
+            const kdvMatch = kdvLine.match(/^[*+]?([\d.,]+)$/);
             if (kdvMatch) {
               const vatAmount = parseNumber(kdvMatch[1]);
               if (vatAmount > 0 && vatAmount < (total > 0 ? total * 0.15 : 100)) {
                 result.vat10 += vatAmount;
-                console.log('📊 %10 KDV bulundu (ayrı satır):', vatAmount);
+                console.log('📊 %10 KDV bulundu (çok satırlı):', vatAmount);
+              }
+            }
+          }
+        }
+        
+        // %8 oran satırı: "8" veya "%8" veya "18" (dikkat: 18 -> %8 olabilir)
+        if (/^%?8\.?$/.test(line)) {
+          if (i + 2 < lines.length) {
+            const kdvLine = lines[i + 2];
+            const kdvMatch = kdvLine.match(/^[*+]?([\d.,]+)$/);
+            if (kdvMatch) {
+              const vatAmount = parseNumber(kdvMatch[1]);
+              if (vatAmount > 0 && vatAmount < (total > 0 ? total * 0.15 : 100)) {
+                result.vat10 += vatAmount;
+                console.log('📊 %8 KDV bulundu (çok satırlı):', vatAmount);
               }
             }
           }
