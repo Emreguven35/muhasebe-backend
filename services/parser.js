@@ -855,55 +855,75 @@ function extractVATDetailed(text, total) {
   
   const lines = text.split('\n').map(l => l.trim()).filter(l => l);
   
+  // KDV tablosu var mı kontrol et (MATRAH, KDV TUTAR gibi başlıklar)
+  const hasKdvTable = /MATRAH|KDV\s*TUTAR|KDV\s*DAHİL|KDV\s*DAHIL/i.test(text);
+  
   // 1. BİM/A101 tipi KDV tablosu - "%1. 472.77 *4.73 *477.50" formatı
-  for (const line of lines) {
-    // %1 KDV satırı
-    const vat1Match = line.match(/[%Z]?1[\.,]?\s+[\d.,]+\s+[*+]?([\d.,]+)/);
-    if (vat1Match && !/[%Z]?10/.test(line) && !/[%Z]?18/.test(line) && !/[%Z]?20/.test(line)) {
-      const vatAmount = parseNumber(vat1Match[1]);
-      if (vatAmount > 0 && vatAmount < total * 0.05) {
-        result.vat1 += vatAmount;
-        console.log('📊 %1 KDV bulundu (tablo):', vatAmount);
+  // Sadece KDV tablosu varsa veya satır % ile başlıyorsa çalış
+  if (hasKdvTable) {
+    for (const line of lines) {
+      // Satır % ile başlamalı (KDV oranı satırı)
+      // Format: %1. 472.77 *4.73 *477.50 veya %1 472.77 *4.73
+      
+      // %1 KDV satırı - satır başında % olmalı
+      if (/^[%Z]1[\.,\s]/.test(line) && !/^[%Z]10/.test(line) && !/^[%Z]18/.test(line) && !/^[%Z]20/.test(line)) {
+        // Üçüncü sayı grubu KDV tutarı (MATRAH KDV_TUTAR KDV_DAHIL)
+        const match = line.match(/^[%Z]1[\.,]?\s+([\d.,]+)\s+[*+]?([\d.,]+)/);
+        if (match) {
+          const vatAmount = parseNumber(match[2]);
+          if (vatAmount > 0 && vatAmount < (total > 0 ? total * 0.05 : 1000)) {
+            result.vat1 += vatAmount;
+            console.log('📊 %1 KDV bulundu (tablo):', vatAmount);
+          }
+        }
       }
-    }
-    
-    // %8 KDV satırı (vat10'a ekle - yakın oran)
-    const vat8Match = line.match(/[%Z]?8[\.,]?\s+[\d.,]+\s+[*+]?([\d.,]+)/);
-    if (vat8Match && !/[%Z]?18/.test(line)) {
-      const vatAmount = parseNumber(vat8Match[1]);
-      if (vatAmount > 0 && vatAmount < total * 0.15) {
-        result.vat10 += vatAmount;
-        console.log('📊 %8 KDV bulundu (tablo):', vatAmount);
+      
+      // %8 KDV satırı
+      if (/^[%Z]8[\.,\s]/.test(line) && !/^[%Z]18/.test(line)) {
+        const match = line.match(/^[%Z]8[\.,]?\s+([\d.,]+)\s+[*+]?([\d.,]+)/);
+        if (match) {
+          const vatAmount = parseNumber(match[2]);
+          if (vatAmount > 0 && vatAmount < (total > 0 ? total * 0.15 : 1000)) {
+            result.vat10 += vatAmount;
+            console.log('📊 %8 KDV bulundu (tablo):', vatAmount);
+          }
+        }
       }
-    }
-    
-    // %10 KDV satırı
-    const vat10Match = line.match(/[%Z]?10[\.,]?\s+[\d.,]+\s+[*+]?([\d.,]+)/);
-    if (vat10Match) {
-      const vatAmount = parseNumber(vat10Match[1]);
-      if (vatAmount > 0 && vatAmount < total * 0.15) {
-        result.vat10 += vatAmount;
-        console.log('📊 %10 KDV bulundu (tablo):', vatAmount);
+      
+      // %10 KDV satırı
+      if (/^[%Z]10[\.,\s]/.test(line)) {
+        const match = line.match(/^[%Z]10[\.,]?\s+([\d.,]+)\s+[*+]?([\d.,]+)/);
+        if (match) {
+          const vatAmount = parseNumber(match[2]);
+          if (vatAmount > 0 && vatAmount < (total > 0 ? total * 0.15 : 1000)) {
+            result.vat10 += vatAmount;
+            console.log('📊 %10 KDV bulundu (tablo):', vatAmount);
+          }
+        }
       }
-    }
-    
-    // %18 KDV satırı (vat20'ye ekle - yakın oran)
-    const vat18Match = line.match(/[%Z]?18[\.,]?\s+[\d.,]+\s+[*+]?([\d.,]+)/);
-    if (vat18Match) {
-      const vatAmount = parseNumber(vat18Match[1]);
-      if (vatAmount > 0 && vatAmount < total * 0.25) {
-        result.vat20 += vatAmount;
-        console.log('📊 %18 KDV bulundu (tablo):', vatAmount);
+      
+      // %18 KDV satırı
+      if (/^[%Z]18[\.,\s]/.test(line)) {
+        const match = line.match(/^[%Z]18[\.,]?\s+([\d.,]+)\s+[*+]?([\d.,]+)/);
+        if (match) {
+          const vatAmount = parseNumber(match[2]);
+          if (vatAmount > 0 && vatAmount < (total > 0 ? total * 0.25 : 1000)) {
+            result.vat20 += vatAmount;
+            console.log('📊 %18 KDV bulundu (tablo):', vatAmount);
+          }
+        }
       }
-    }
-    
-    // %20 KDV satırı
-    const vat20Match = line.match(/[%Z]?20[\.,]?\s+[\d.,]+\s+[*+]?([\d.,]+)/);
-    if (vat20Match) {
-      const vatAmount = parseNumber(vat20Match[1]);
-      if (vatAmount > 0 && vatAmount < total * 0.25) {
-        result.vat20 += vatAmount;
-        console.log('📊 %20 KDV bulundu (tablo):', vatAmount);
+      
+      // %20 KDV satırı
+      if (/^[%Z]20[\.,\s]/.test(line)) {
+        const match = line.match(/^[%Z]20[\.,]?\s+([\d.,]+)\s+[*+]?([\d.,]+)/);
+        if (match) {
+          const vatAmount = parseNumber(match[2]);
+          if (vatAmount > 0 && vatAmount < (total > 0 ? total * 0.25 : 1000)) {
+            result.vat20 += vatAmount;
+            console.log('📊 %20 KDV bulundu (tablo):', vatAmount);
+          }
+        }
       }
     }
   }
