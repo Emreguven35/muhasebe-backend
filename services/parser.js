@@ -522,35 +522,34 @@ function extractReceiptNumber(text, lines) {
     lines = text.split('\n').map(line => line.trim()).filter(line => line);
   }
 
-  // 1. ÖNCELİKLİ: Satır bazlı analiz - "FİŞ NO" satırından sonraki değer
-  // OCR bazen "FİŞ NO" ve değeri ayrı satırlara koyuyor
+  // 1. ÖNCELİKLİ: Satır bazlı analiz - "FİŞ NO" veya "FIS NO" içeren satır
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].toUpperCase();
+    const line = lines[i];
     
-    // "FİŞ NO", "FIS NO" gibi satır mı?
-    if (/^F[İI]?[SŞ]\s*NO\s*:?\s*$/i.test(line) || /^F[İI]?[SŞ]\s*NO$/i.test(line)) {
-      // Sonraki satırlarda değer ara
+    // "FİŞ NO: 0017" veya "FIS NO: 01.9" veya "FİŞ NO:0029" formatı
+    const fisNoMatch = line.match(/F[İI]?[SŞ]\s*NO\s*[:\s]*([0-9][0-9.,]*)/i);
+    if (fisNoMatch) {
+      // Noktalı format olabilir: 01.9 -> 019 veya olduğu gibi bırak
+      let fisNo = fisNoMatch[1].trim();
+      console.log('✅ Fiş no bulundu (aynı satır):', fisNo);
+      return fisNo;
+    }
+    
+    // "FİŞ NO", "FIS NO" gibi satır, sonraki satırda değer
+    if (/^F[İI]?[SŞ]\s*NO\s*:?\s*$/i.test(line)) {
       for (let j = i + 1; j < Math.min(i + 3, lines.length); j++) {
         const nextLine = lines[j].trim();
-        // : ile başlayabilir veya doğrudan sayı olabilir
-        const numMatch = nextLine.match(/^:?\s*(\d{3,10})$/);
+        const numMatch = nextLine.match(/^:?\s*([0-9][0-9.,]*)$/);
         if (numMatch) {
           console.log('✅ Fiş no bulundu (sonraki satır):', numMatch[1]);
           return numMatch[1];
         }
       }
     }
-    
-    // Aynı satırda "FİŞ NO : 00023" veya "FİŞ NO:0017" formatı
-    const sameLineMatch = line.match(/F[İI]?[SŞ]\s*NO\s*:?\s*(\d{3,10})/i);
-    if (sameLineMatch) {
-      console.log('✅ Fiş no bulundu (aynı satır):', sameLineMatch[1]);
-      return sameLineMatch[1];
-    }
   }
 
-  // 2. e-Arşiv fatura numarası (A ile başlayan, 16+ karakter)
-  const eArsivMatch = text.match(/(?:FATURA\s*NO|FATURA\s*NUMARASI|BELGE\s*NO)[:\s#]*([A-Z]\d{10,20})/i);
+  // 2. e-Arşiv fatura numarası (A veya T ile başlayan, 16+ karakter)
+  const eArsivMatch = text.match(/(?:FATURA\s*NO|FATURA\s*NUMARASI|BELGE\s*NO)[:\s#]*([A-Z][A-Z0-9]{10,20})/i);
   if (eArsivMatch) {
     console.log('✅ e-Arşiv fatura no bulundu:', eArsivMatch[1]);
     return eArsivMatch[1];
@@ -564,23 +563,22 @@ function extractReceiptNumber(text, lines) {
   }
 
   // 4. Z NO
-  const zNoMatch = text.match(/Z\s*NO[:\s]*:?\s*(\d{3,10})/i);
+  const zNoMatch = text.match(/Z\s*NO[:\s]*:?\s*([0-9][0-9.,]*)/i);
   if (zNoMatch) {
     console.log('✅ Z no bulundu:', zNoMatch[1]);
     return zNoMatch[1];
   }
 
   // 5. EKÜ NO
-  const ekuMatch = text.match(/EK[ÜU]\s*NO[:\s]*:?\s*(\d{3,10})/i);
+  const ekuMatch = text.match(/EK[ÜU]\s*NO[:\s]*:?\s*(\d{1,10})/i);
   if (ekuMatch) {
     console.log('✅ EKÜ no bulundu:', ekuMatch[1]);
     return ekuMatch[1];
   }
 
-  // 6. Genel fiş/belge no pattern'leri
+  // 6. Genel fiş/belge no pattern'leri - ama dikkatli ol
   const patterns = [
-    /(?:BELGE\s*NO|RECEIPT\s*NO|SERİ\s*NO)[:\s#]*([A-Z0-9\-]{3,20})/i,
-    /(?:NO|NUMARA)[:\s#]*(\d{6,})/i
+    /(?:BELGE\s*NO|RECEIPT\s*NO|SERİ\s*NO)[:\s#]*([A-Z0-9\-]{3,20})/i
   ];
 
   for (const pattern of patterns) {
@@ -589,9 +587,8 @@ function extractReceiptNumber(text, lines) {
       const num = match[1].trim();
       // Telefon numarası, MERSİS no gibi değerleri atla
       if (!/^0?\d{10,11}$/.test(num) && !/^444/.test(num) && !/^850/.test(num)) {
-        // 16 haneli ve 0 ile başlıyorsa MERSİS olabilir, atla
-        if (num.length === 16 && num.startsWith('0')) {
-          console.log('⚠️ MERSİS no atlandı:', num);
+        if (num.length >= 16 && /^\d+$/.test(num)) {
+          console.log('⚠️ Muhtemel MERSİS no atlandı:', num);
           continue;
         }
         console.log('✅ Fiş no bulundu (genel pattern):', num);
@@ -642,12 +639,22 @@ function parseNumber(str) {
   
   // Format tespiti:
   // Türk formatı: 1.234,56 (nokta binlik, virgül ondalık)
-  // Uluslararası format: 1,234.56 veya 5000.00 (virgül binlik, nokta ondalık)
+  // Uluslararası format: 1,234.56 veya 1000.00 (virgül binlik, nokta ondalık)
+  // Özel durum: 1.000.00 (iki nokta - ilki binlik, ikincisi ondalık)
   
   const hasComma = cleaned.includes(',');
   const hasDot = cleaned.includes('.');
+  const dotCount = (cleaned.match(/\./g) || []).length;
   
-  if (hasComma && hasDot) {
+  // Özel durum: "1.000.00" formatı - iki nokta var
+  // İlk nokta binlik ayracı, son nokta ondalık ayracı
+  if (dotCount >= 2 && !hasComma) {
+    // Son noktadan önceki noktaları kaldır, son noktayı bırak
+    const lastDotIndex = cleaned.lastIndexOf('.');
+    const beforeLastDot = cleaned.substring(0, lastDotIndex).replace(/\./g, '');
+    const afterLastDot = cleaned.substring(lastDotIndex);
+    cleaned = beforeLastDot + afterLastDot;
+  } else if (hasComma && hasDot) {
     // Her ikisi de var - hangisi son?
     const lastComma = cleaned.lastIndexOf(',');
     const lastDot = cleaned.lastIndexOf('.');
@@ -670,17 +677,13 @@ function parseNumber(str) {
       // Binlik: 5,000
       cleaned = cleaned.replace(/,/g, '');
     }
-  } else if (hasDot && !hasComma) {
-    // Sadece nokta var
-    // Noktadan sonra 2 hane varsa ondalık, değilse binlik
+  } else if (hasDot && !hasComma && dotCount === 1) {
+    // Tek nokta var
     const parts = cleaned.split('.');
-    if (parts.length === 2 && parts[1].length === 2) {
+    if (parts[1] && parts[1].length === 2) {
       // Ondalık: 5000.00 - olduğu gibi bırak
-    } else if (parts.length > 2) {
-      // Birden fazla nokta: 1.234.567 - binlik ayraç
-      cleaned = cleaned.replace(/\./g, '');
     } else if (parts[1] && parts[1].length === 3) {
-      // Tek nokta, 3 hane: 5.000 - binlik ayraç
+      // Binlik ayraç: 5.000 -> 5000
       cleaned = cleaned.replace(/\./g, '');
     }
     // Diğer durumlar: olduğu gibi bırak (örn: 5000.5)
