@@ -28,11 +28,11 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Email veya şifre hatalı' });
     }
 
-    // ✅ "id" kullan (userId değil) - server.js ile tutarlı
+    // ✅ Token süresi: 1 yıl
     const token = jwt.sign(
       { id: user.id, email: user.email },
       process.env.JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: '1y' }
     );
 
     res.json({
@@ -78,11 +78,11 @@ router.post('/register', async (req, res) => {
 
     const newUser = result.rows[0];
 
-    // Token oluştur
+    // ✅ Token süresi: 1 yıl
     const token = jwt.sign(
       { id: newUser.id, email: newUser.email },
       process.env.JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: '1y' }
     );
 
     res.json({
